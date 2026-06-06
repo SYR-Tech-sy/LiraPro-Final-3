@@ -19,11 +19,11 @@ function checkAdmin(req: import("express").Request, res: import("express").Respo
 
 // ── SYP Rate ──────────────────────────────────────────────────────────────────
 
-router.get("/settings/syp-rate", (_req, res): void => {
-  res.json(getSypRateSettings());
+router.get("/settings/syp-rate", async (_req, res): Promise<void> => {
+  res.json(await getSypRateSettings());
 });
 
-router.post("/settings/syp-rate", (req, res): void => {
+router.post("/settings/syp-rate", async (req, res): Promise<void> => {
   if (!checkAdmin(req, res)) return;
   const { rate, isManual } = req.body as { rate: unknown; isManual: unknown };
   const rateNum = Number(rate);
@@ -31,7 +31,7 @@ router.post("/settings/syp-rate", (req, res): void => {
     res.status(400).json({ error: "rate must be a positive number" });
     return;
   }
-  const updated = setSypRateSettings(rateNum, !!isManual);
+  const updated = await setSypRateSettings(rateNum, !!isManual);
   req.log.info({ rate: rateNum, isManual }, "SYP rate settings updated");
   res.json(updated);
 });

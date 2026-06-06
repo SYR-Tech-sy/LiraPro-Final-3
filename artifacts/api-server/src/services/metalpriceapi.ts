@@ -1,7 +1,5 @@
 // Shared MetalPriceAPI service — cached, used by exchange, gold, and metals routes.
 
-import { getActiveSypRate } from "./sypRateService.js";
-
 const API_KEY = process.env.METAL_PRICE_API_KEY ?? "";
 
 // Free-plan supported currencies (XCU and other industrial metals require paid plan)
@@ -64,8 +62,7 @@ export async function fetchMetalPriceApi(): Promise<MetalPriceApiResponse> {
 }
 
 /** Get all FX rates (currency units per 1 USD) — SYP uses active rate (manual or default) */
-export function getFxRates(data: MetalPriceApiResponse): Record<string, number> {
-  const sypRate = getActiveSypRate();
+export function getFxRates(data: MetalPriceApiResponse, sypRate: number): Record<string, number> {
   const result: Record<string, number> = {};
   for (const [k, v] of Object.entries(data.rates)) {
     // Skip USD-inverse keys (e.g. "USDEUR") — keep only "per USD" rates

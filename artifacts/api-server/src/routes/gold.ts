@@ -17,7 +17,7 @@ const KARATS = [
 const TROY_OZ_TO_GRAM = 31.1035;
 
 router.get("/gold/prices", async (req, res): Promise<void> => {
-  const sypRate = getActiveSypRate();
+  const sypRate = await getActiveSypRate();
   const goldOvr = await getGoldOverride();
 
   try {

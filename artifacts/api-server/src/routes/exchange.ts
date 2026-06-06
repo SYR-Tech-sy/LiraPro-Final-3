@@ -16,20 +16,19 @@ const FALLBACK_RATES: Record<string, number> = {
   KWD: 0.31, BHD: 0.38, QAR: 3.64, OMR: 0.38, LBP: 89500,
 };
 
-async function fetchRates(): Promise<{ rates: Record<string, number>; rawSypRate: number }> {
+async function fetchRates(sypRate: number): Promise<{ rates: Record<string, number>; rawSypRate: number }> {
   const data = await fetchMetalPriceApi();
   const rawSypRate = typeof data.rates["SYP"] === "number" && data.rates["SYP"] > 0
     ? data.rates["SYP"]
     : MARKET_USD_TO_SYP;
-  return { rates: getFxRates(data), rawSypRate };
+  return { rates: getFxRates(data, sypRate), rawSypRate };
 }
 
 router.get("/exchange/rates", async (req, res): Promise<void> => {
-  const settings = getSypRateSettings();
-  const usd_to_syp = getActiveSypRate();
+  const [settings, usd_to_syp] = await Promise.all([getSypRateSettings(), getActiveSypRate()]);
 
   try {
-    const { rates, rawSypRate } = await fetchRates();
+    const { rates, rawSypRate } = await fetchRates(usd_to_syp);
     const try_rate = rates["TRY"] ?? 38;
     const try_to_syp = usd_to_syp / try_rate;
 
@@ -65,10 +64,10 @@ router.get("/exchange/convert", async (req, res): Promise<void> => {
     return;
   }
   const { from, to, amount } = parsed.data;
-  const sypRate = getActiveSypRate();
+  const sypRate = await getActiveSypRate();
 
   try {
-    const { rates } = await fetchRates();
+    const { rates } = await fetchRates(sypRate);
 
     function getRateSYP(code: string): number {
       if (code === "SYP") return 1;

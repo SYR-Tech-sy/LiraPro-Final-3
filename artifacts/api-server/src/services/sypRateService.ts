@@ -1,9 +1,8 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { db, rateOverridesTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
-const __dir = dirname(fileURLToPath(import.meta.url));
-const SETTINGS_FILE = join(__dir, "../syp-rate-settings.json");
+const SYP_KEY = "syp";
+const DEFAULT_RATE = 13500;
 
 export interface SypRateSettings {
   rate: number;
@@ -11,37 +10,36 @@ export interface SypRateSettings {
   updatedAt: string;
 }
 
-const DEFAULT_SETTINGS: SypRateSettings = {
-  rate: 13500,
-  isManual: false,
-  updatedAt: new Date().toISOString(),
-};
+export async function getActiveSypRate(): Promise<number> {
+  const settings = await getSypRateSettings();
+  return settings.isManual ? settings.rate : DEFAULT_RATE;
+}
 
-function readSettings(): SypRateSettings {
-  try {
-    if (!existsSync(SETTINGS_FILE)) return { ...DEFAULT_SETTINGS };
-    return JSON.parse(readFileSync(SETTINGS_FILE, "utf-8")) as SypRateSettings;
-  } catch {
-    return { ...DEFAULT_SETTINGS };
+export async function getSypRateSettings(): Promise<SypRateSettings> {
+  const rows = await db
+    .select()
+    .from(rateOverridesTable)
+    .where(eq(rateOverridesTable.key, SYP_KEY))
+    .limit(1);
+  if (!rows.length) {
+    return { rate: DEFAULT_RATE, isManual: false, updatedAt: new Date().toISOString() };
   }
+  const row = rows[0];
+  return {
+    rate: row.priceSYP,
+    isManual: row.isManual,
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
-function saveSettings(settings: SypRateSettings): void {
-  writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
-}
-
-let _settings: SypRateSettings = readSettings();
-
-export function getActiveSypRate(): number {
-  return _settings.isManual ? _settings.rate : 13500;
-}
-
-export function getSypRateSettings(): SypRateSettings {
-  return { ..._settings };
-}
-
-export function setSypRateSettings(rate: number, isManual: boolean): SypRateSettings {
-  _settings = { rate, isManual, updatedAt: new Date().toISOString() };
-  saveSettings(_settings);
-  return { ..._settings };
+export async function setSypRateSettings(rate: number, isManual: boolean): Promise<SypRateSettings> {
+  const now = new Date();
+  await db
+    .insert(rateOverridesTable)
+    .values({ key: SYP_KEY, type: "syp", priceSYP: rate, isManual, updatedAt: now })
+    .onConflictDoUpdate({
+      target: rateOverridesTable.key,
+      set: { priceSYP: rate, isManual, updatedAt: now },
+    });
+  return { rate, isManual, updatedAt: now.toISOString() };
 }

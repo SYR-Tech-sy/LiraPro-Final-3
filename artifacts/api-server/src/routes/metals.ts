@@ -19,7 +19,7 @@ const FALLBACK_PRICES_USD: Record<string, number> = {
 };
 
 router.get("/metals", async (req, res): Promise<void> => {
-  const sypRate = getActiveSypRate();
+  const sypRate = await getActiveSypRate();
 
   try {
     const data = await fetchMetalPriceApi();
