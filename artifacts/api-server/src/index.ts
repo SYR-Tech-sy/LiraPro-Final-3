@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { migrateJsonFileToDB } from "./services/sypRateService";
+import { migrateCurrencyJsonFileToDB } from "./services/rateOverridesService";
 import { getGoldOverride, getAllMetalOverrides } from "./services/goldMetalRateService";
 import { pruneOldHistory } from "./services/overrideHistoryService";
 
@@ -54,6 +55,13 @@ migrateJsonFileToDB()
   })
   .catch((err) => {
     logger.warn({ err }, "SYP rate migration from JSON file failed — continuing startup");
+  })
+  .then(() => migrateCurrencyJsonFileToDB())
+  .then(() => {
+    logger.info("Currency rate migration from JSON file completed");
+  })
+  .catch((err) => {
+    logger.warn({ err }, "Currency rate migration from JSON file failed — continuing startup");
   })
   .then(() => initMetalOverridePersistence())
   .catch((err) => {

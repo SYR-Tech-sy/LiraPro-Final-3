@@ -272,8 +272,8 @@ router.get("/users/ban-status/:userId", async (req, res): Promise<void> => {
 });
 
 // ── Rate Overrides ───────────────────────────────────────────────────────────
-router.get("/admin/rate-overrides", (_req, res): void => {
-  res.json(getAllOverrides());
+router.get("/admin/rate-overrides", async (_req, res): Promise<void> => {
+  res.json(await getAllOverrides());
 });
 
 router.post("/admin/rate-overrides", async (req, res): Promise<void> => {
@@ -281,21 +281,21 @@ router.post("/admin/rate-overrides", async (req, res): Promise<void> => {
   const { code, buyPrice, sellPrice } = req.body as { code: string; buyPrice?: number; sellPrice?: number };
   if (!code) { res.status(400).json({ error: "code required" }); return; }
   const actor = await resolveAdminActor(req);
-  const entry = setOverride(code, buyPrice, sellPrice, actor);
+  const entry = await setOverride(code, buyPrice, sellPrice, actor);
   res.json(entry);
 });
 
 router.delete("/admin/rate-overrides/:code", async (req, res): Promise<void> => {
   if (!verifyAdmin(req, res)) return;
   const actor = await resolveAdminActor(req);
-  deleteOverride(req.params.code, actor);
-  res.json({ success: true });
+  const ok = await deleteOverride(req.params.code, actor);
+  res.json({ success: ok });
 });
 
 router.delete("/admin/rate-overrides", async (req, res): Promise<void> => {
   if (!verifyAdmin(req, res)) return;
   const actor = await resolveAdminActor(req);
-  clearAllOverrides(actor);
+  await clearAllOverrides(actor);
   res.json({ success: true });
 });
 
