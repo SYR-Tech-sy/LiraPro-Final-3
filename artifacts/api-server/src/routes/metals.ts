@@ -24,10 +24,14 @@ router.get("/metals", async (req, res): Promise<void> => {
   try {
     const data = await fetchMetalPriceApi();
 
-    const metals = METALS.map(({ name, nameAr, symbol, unit }) => {
+    const metalOverrides = await Promise.all(
+      METALS.map(({ symbol }) => getMetalOverride(symbol)),
+    );
+
+    const metals = METALS.map(({ name, nameAr, symbol, unit }, i) => {
       let priceUSD = getMetalPriceUSD(data, symbol);
       if (!priceUSD || priceUSD <= 0) priceUSD = FALLBACK_PRICES_USD[symbol] ?? 100;
-      const ovr = getMetalOverride(symbol);
+      const ovr = metalOverrides[i];
       const priceSYP = ovr?.isManual ? ovr.priceSYP : priceUSD * sypRate;
       return { name, nameAr, symbol, unit, priceUSD, priceSYP, isManual: ovr?.isManual ?? false };
     });
@@ -39,9 +43,14 @@ router.get("/metals", async (req, res): Promise<void> => {
     res.json(response);
   } catch (err) {
     req.log.error({ err }, "Failed to fetch metal prices — using fallback");
+
+    const metalOverrides = await Promise.all(
+      METALS.map(({ symbol }) => getMetalOverride(symbol)),
+    );
+
     const fallback = {
-      metals: METALS.map(({ name, nameAr, symbol, unit }) => {
-        const ovr = getMetalOverride(symbol);
+      metals: METALS.map(({ name, nameAr, symbol, unit }, i) => {
+        const ovr = metalOverrides[i];
         const priceUSD = FALLBACK_PRICES_USD[symbol] ?? 100;
         const priceSYP = ovr?.isManual ? ovr.priceSYP : priceUSD * sypRate;
         return { name, nameAr, symbol, unit, priceUSD, priceSYP, isManual: ovr?.isManual ?? false };

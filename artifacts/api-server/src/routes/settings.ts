@@ -38,12 +38,12 @@ router.post("/settings/syp-rate", (req, res): void => {
 
 // ── Gold Override ─────────────────────────────────────────────────────────────
 
-router.get("/settings/gold-rate", (_req, res): void => {
-  const ovr = getGoldOverride();
+router.get("/settings/gold-rate", async (_req, res): Promise<void> => {
+  const ovr = await getGoldOverride();
   res.json({ override: ovr, isManual: ovr?.isManual ?? false });
 });
 
-router.post("/settings/gold-rate", (req, res): void => {
+router.post("/settings/gold-rate", async (req, res): Promise<void> => {
   if (!checkAdmin(req, res)) return;
   const { pricePerGramSYP } = req.body as { pricePerGramSYP: unknown };
   const price = Number(pricePerGramSYP);
@@ -51,25 +51,25 @@ router.post("/settings/gold-rate", (req, res): void => {
     res.status(400).json({ error: "pricePerGramSYP must be a positive number" });
     return;
   }
-  const updated = setGoldOverride(price);
+  const updated = await setGoldOverride(price);
   req.log.info({ pricePerGramSYP: price }, "Gold price override set");
   res.json(updated);
 });
 
-router.delete("/settings/gold-rate", (req, res): void => {
+router.delete("/settings/gold-rate", async (req, res): Promise<void> => {
   if (!checkAdmin(req, res)) return;
-  clearGoldOverride();
+  await clearGoldOverride();
   req.log.info("Gold price override cleared");
   res.json({ ok: true });
 });
 
 // ── Metals Override ───────────────────────────────────────────────────────────
 
-router.get("/settings/metal-rates", (_req, res): void => {
-  res.json(getAllMetalOverrides());
+router.get("/settings/metal-rates", async (_req, res): Promise<void> => {
+  res.json(await getAllMetalOverrides());
 });
 
-router.post("/settings/metal-rates/:symbol", (req, res): void => {
+router.post("/settings/metal-rates/:symbol", async (req, res): Promise<void> => {
   if (!checkAdmin(req, res)) return;
   const symbol = req.params.symbol.toUpperCase();
   const { priceSYP } = req.body as { priceSYP: unknown };
@@ -78,15 +78,15 @@ router.post("/settings/metal-rates/:symbol", (req, res): void => {
     res.status(400).json({ error: "priceSYP must be a positive number" });
     return;
   }
-  const updated = setMetalOverride(symbol, price);
+  const updated = await setMetalOverride(symbol, price);
   req.log.info({ symbol, priceSYP: price }, "Metal price override set");
   res.json(updated);
 });
 
-router.delete("/settings/metal-rates/:symbol", (req, res): void => {
+router.delete("/settings/metal-rates/:symbol", async (req, res): Promise<void> => {
   if (!checkAdmin(req, res)) return;
   const symbol = req.params.symbol.toUpperCase();
-  clearMetalOverride(symbol);
+  await clearMetalOverride(symbol);
   req.log.info({ symbol }, "Metal price override cleared");
   res.json({ ok: true });
 });

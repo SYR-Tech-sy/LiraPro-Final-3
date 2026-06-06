@@ -18,7 +18,7 @@ const TROY_OZ_TO_GRAM = 31.1035;
 
 router.get("/gold/prices", async (req, res): Promise<void> => {
   const sypRate = getActiveSypRate();
-  const goldOvr = getGoldOverride();
+  const goldOvr = await getGoldOverride();
 
   try {
     const data = await fetchMetalPriceApi();
