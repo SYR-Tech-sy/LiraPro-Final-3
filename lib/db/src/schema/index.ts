@@ -4,3 +4,4 @@ export * from "./vendor-profiles";
 export * from "./vendor-prices";
 export * from "./vendor-applications";
 export * from "./rate-overrides";
+export * from "./override-history";

@@ -1,5 +1,6 @@
 import { db, rateOverridesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { logOverrideHistory } from "./overrideHistoryService.js";
 
 export interface GoldOverride {
   pricePerGramSYP: number;
@@ -31,7 +32,7 @@ export async function getGoldOverride(): Promise<GoldOverride | null> {
   };
 }
 
-export async function setGoldOverride(pricePerGramSYP: number): Promise<GoldOverride> {
+export async function setGoldOverride(pricePerGramSYP: number, changedBy?: string): Promise<GoldOverride> {
   const now = new Date();
   await db
     .insert(rateOverridesTable)
@@ -40,11 +41,13 @@ export async function setGoldOverride(pricePerGramSYP: number): Promise<GoldOver
       target: rateOverridesTable.key,
       set: { priceSYP: pricePerGramSYP, isManual: true, updatedAt: now },
     });
+  await logOverrideHistory("gold", GOLD_KEY, "set", pricePerGramSYP, changedBy).catch(() => {});
   return { pricePerGramSYP, isManual: true, updatedAt: now.toISOString() };
 }
 
-export async function clearGoldOverride(): Promise<void> {
+export async function clearGoldOverride(changedBy?: string): Promise<void> {
   await db.delete(rateOverridesTable).where(eq(rateOverridesTable.key, GOLD_KEY));
+  await logOverrideHistory("gold", GOLD_KEY, "clear", null, changedBy).catch(() => {});
 }
 
 export async function getMetalOverride(symbol: string): Promise<MetalOverride | null> {
@@ -82,7 +85,7 @@ export async function getAllMetalOverrides(): Promise<Record<string, MetalOverri
   return result;
 }
 
-export async function setMetalOverride(symbol: string, priceSYP: number): Promise<MetalOverride> {
+export async function setMetalOverride(symbol: string, priceSYP: number, changedBy?: string): Promise<MetalOverride> {
   const key = `metal:${symbol.toUpperCase()}`;
   const now = new Date();
   await db
@@ -92,10 +95,12 @@ export async function setMetalOverride(symbol: string, priceSYP: number): Promis
       target: rateOverridesTable.key,
       set: { priceSYP, isManual: true, updatedAt: now },
     });
+  await logOverrideHistory("metal", key, "set", priceSYP, changedBy).catch(() => {});
   return { symbol: symbol.toUpperCase(), priceSYP, isManual: true, updatedAt: now.toISOString() };
 }
 
-export async function clearMetalOverride(symbol: string): Promise<void> {
+export async function clearMetalOverride(symbol: string, changedBy?: string): Promise<void> {
   const key = `metal:${symbol.toUpperCase()}`;
   await db.delete(rateOverridesTable).where(eq(rateOverridesTable.key, key));
+  await logOverrideHistory("metal", key, "clear", null, changedBy).catch(() => {});
 }

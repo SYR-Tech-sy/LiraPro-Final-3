@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { logOverrideHistory } from "./overrideHistoryService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,7 +44,7 @@ export function getAllOverrides(): Record<string, CurrencyOverride> {
   return readData().overrides;
 }
 
-export function setOverride(code: string, buyPrice?: number, sellPrice?: number): CurrencyOverride {
+export function setOverride(code: string, buyPrice?: number, sellPrice?: number, changedBy?: string): CurrencyOverride {
   const data = readData();
   const entry: CurrencyOverride = {
     code,
@@ -53,17 +54,27 @@ export function setOverride(code: string, buyPrice?: number, sellPrice?: number)
   };
   data.overrides[code] = entry;
   writeData(data);
+  const avgPrice = buyPrice != null && sellPrice != null
+    ? (buyPrice + sellPrice) / 2
+    : (buyPrice ?? sellPrice ?? null);
+  logOverrideHistory("currency", code, "set", avgPrice, changedBy).catch(() => {});
   return entry;
 }
 
-export function deleteOverride(code: string): boolean {
+export function deleteOverride(code: string, changedBy?: string): boolean {
   const data = readData();
   if (!data.overrides[code]) return false;
   delete data.overrides[code];
   writeData(data);
+  logOverrideHistory("currency", code, "clear", null, changedBy).catch(() => {});
   return true;
 }
 
-export function clearAllOverrides(): void {
+export function clearAllOverrides(changedBy?: string): void {
+  const data = readData();
+  const codes = Object.keys(data.overrides);
   writeData({ overrides: {} });
+  for (const code of codes) {
+    logOverrideHistory("currency", code, "clear", null, changedBy).catch(() => {});
+  }
 }

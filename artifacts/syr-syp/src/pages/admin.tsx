@@ -1309,6 +1309,12 @@ export default function AdminPage() {
   const [editMetalVal, setEditMetalVal] = useState('');
   const [metalMsg, setMetalMsg] = useState('');
 
+  // Override history state
+  interface OverrideHistoryEntry { id: number; priceType: string; key: string; action: string; priceSYP: number | null; changedBy: string | null; changedAt: string; }
+  const [overrideHistory, setOverrideHistory] = useState<OverrideHistoryEntry[]>([]);
+  const [overrideHistoryOpen, setOverrideHistoryOpen] = useState(false);
+  const [overrideHistoryLoading, setOverrideHistoryLoading] = useState(false);
+
   // Rates tab state
   const [sypRateCurrent, setSypRateCurrent] = useState(13500);
   const [sypRateIsManual, setSypRateIsManual] = useState(false);
@@ -1894,6 +1900,21 @@ export default function AdminPage() {
       },
     });
   };
+
+  const fetchOverrideHistory = useCallback(async () => {
+    setOverrideHistoryLoading(true);
+    try {
+      const res = await fetch('/api/admin/override-history?limit=50', {
+        headers: { 'X-Admin-Token': token ?? '' },
+      });
+      if (res.ok) {
+        const data = await res.json() as OverrideHistoryEntry[];
+        setOverrideHistory(data);
+      }
+    } catch {} finally {
+      setOverrideHistoryLoading(false);
+    }
+  }, [token]);
 
   const fetchGoldOverride = useCallback(async () => {
     try {
@@ -4873,6 +4894,107 @@ export default function AdminPage() {
                   </Card>
                 );
               })()}
+
+              {/* Override History */}
+              <Card className="border-border shadow-sm overflow-hidden">
+                <button
+                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-secondary/30 transition-colors"
+                  style={{ background: '#7C3AED10' }}
+                  onClick={() => {
+                    const next = !overrideHistoryOpen;
+                    setOverrideHistoryOpen(next);
+                    if (next && overrideHistory.length === 0) void fetchOverrideHistory();
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-violet-500" />
+                    <span className="font-bold text-sm">سجل تغييرات الأسعار اليدوية</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {overrideHistory.length > 0 && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                        {overrideHistory.length} سجل
+                      </span>
+                    )}
+                    {overrideHistoryOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </div>
+                </button>
+                <AnimatePresence>
+                  {overrideHistoryOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <CardContent className="p-3 flex flex-col gap-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] text-muted-foreground">آخر ٥٠ تغيير</span>
+                          <button
+                            onClick={() => void fetchOverrideHistory()}
+                            disabled={overrideHistoryLoading}
+                            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${overrideHistoryLoading ? 'animate-spin' : ''}`} /> تحديث
+                          </button>
+                        </div>
+                        {overrideHistoryLoading && overrideHistory.length === 0 ? (
+                          <div className="flex items-center justify-center py-6">
+                            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : overrideHistory.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-4">لا توجد سجلات بعد. ستظهر هنا عند إجراء تغييرات على الأسعار.</p>
+                        ) : (
+                          <div className="flex flex-col gap-1.5 max-h-80 overflow-y-auto">
+                            {overrideHistory.map(entry => {
+                              const isSet = entry.action === 'set';
+                              const typeLabel: Record<string, string> = {
+                                syp: 'دولار / ل.س', gold: 'الذهب', metal: 'معدن', currency: 'عملة',
+                              };
+                              const keyLabel = entry.key === 'syp' ? 'USD/SYP'
+                                : entry.key === 'gold' ? 'XAU'
+                                : entry.key.replace('metal:', '');
+                              return (
+                                <div key={entry.id} className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs border ${
+                                  isSet
+                                    ? 'bg-amber-50/60 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/40'
+                                    : 'bg-secondary/40 border-border'
+                                }`}>
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                                      isSet
+                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                                        : 'bg-secondary text-muted-foreground'
+                                    }`}>
+                                      {isSet ? '✏ تعيين' : '✕ مسح'}
+                                    </span>
+                                    <span className="font-bold truncate">{typeLabel[entry.priceType] ?? entry.priceType}</span>
+                                    <span className="text-muted-foreground font-mono text-[10px]" dir="ltr">{keyLabel}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0 ml-2 text-left">
+                                    {isSet && entry.priceSYP != null && (
+                                      <span className="font-black text-amber-700 dark:text-amber-300" dir="ltr">
+                                        {entry.priceSYP.toLocaleString()} ل.س
+                                      </span>
+                                    )}
+                                    {entry.changedBy && (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 font-bold flex-shrink-0">
+                                        {entry.changedBy}
+                                      </span>
+                                    )}
+                                    <span className="text-[9px] text-muted-foreground">{timeAgo(entry.changedAt)}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Card>
 
               {/* Badge reference card */}
               <Card className="border-border shadow-sm overflow-hidden">

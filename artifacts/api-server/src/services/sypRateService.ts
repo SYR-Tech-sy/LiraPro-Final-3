@@ -2,6 +2,7 @@ import { db, rateOverridesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
+import { logOverrideHistory } from "./overrideHistoryService.js";
 
 const SYP_KEY = "syp";
 const DEFAULT_RATE = 13500;
@@ -67,7 +68,7 @@ export async function migrateJsonFileToDB(): Promise<void> {
   fs.rmSync(JSON_FILE_PATH);
 }
 
-export async function setSypRateSettings(rate: number, isManual: boolean): Promise<SypRateSettings> {
+export async function setSypRateSettings(rate: number, isManual: boolean, changedBy?: string): Promise<SypRateSettings> {
   const now = new Date();
   await db
     .insert(rateOverridesTable)
@@ -76,5 +77,6 @@ export async function setSypRateSettings(rate: number, isManual: boolean): Promi
       target: rateOverridesTable.key,
       set: { priceSYP: rate, isManual, updatedAt: now },
     });
+  await logOverrideHistory("syp", SYP_KEY, isManual ? "set" : "clear", isManual ? rate : null, changedBy).catch(() => {});
   return { rate, isManual, updatedAt: now.toISOString() };
 }

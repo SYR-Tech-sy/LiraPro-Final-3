@@ -31,7 +31,7 @@ router.post("/settings/syp-rate", async (req, res): Promise<void> => {
     res.status(400).json({ error: "rate must be a positive number" });
     return;
   }
-  const updated = await setSypRateSettings(rateNum, !!isManual);
+  const updated = await setSypRateSettings(rateNum, !!isManual, "admin");
   req.log.info({ rate: rateNum, isManual }, "SYP rate settings updated");
   res.json(updated);
 });
@@ -51,14 +51,14 @@ router.post("/settings/gold-rate", async (req, res): Promise<void> => {
     res.status(400).json({ error: "pricePerGramSYP must be a positive number" });
     return;
   }
-  const updated = await setGoldOverride(price);
+  const updated = await setGoldOverride(price, "admin");
   req.log.info({ pricePerGramSYP: price }, "Gold price override set");
   res.json(updated);
 });
 
 router.delete("/settings/gold-rate", async (req, res): Promise<void> => {
   if (!checkAdmin(req, res)) return;
-  await clearGoldOverride();
+  await clearGoldOverride("admin");
   req.log.info("Gold price override cleared");
   res.json({ ok: true });
 });
@@ -78,7 +78,7 @@ router.post("/settings/metal-rates/:symbol", async (req, res): Promise<void> => 
     res.status(400).json({ error: "priceSYP must be a positive number" });
     return;
   }
-  const updated = await setMetalOverride(symbol, price);
+  const updated = await setMetalOverride(symbol, price, "admin");
   req.log.info({ symbol, priceSYP: price }, "Metal price override set");
   res.json(updated);
 });
@@ -86,7 +86,7 @@ router.post("/settings/metal-rates/:symbol", async (req, res): Promise<void> => 
 router.delete("/settings/metal-rates/:symbol", async (req, res): Promise<void> => {
   if (!checkAdmin(req, res)) return;
   const symbol = req.params.symbol.toUpperCase();
-  await clearMetalOverride(symbol);
+  await clearMetalOverride(symbol, "admin");
   req.log.info({ symbol }, "Metal price override cleared");
   res.json({ ok: true });
 });

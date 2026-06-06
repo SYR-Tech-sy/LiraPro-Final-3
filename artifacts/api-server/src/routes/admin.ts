@@ -5,6 +5,7 @@ import { getAllUsers, upsertUser, deleteUser, banUser, unbanUser, restrictUser, 
 import { getAllRequests, addRequest, markHandled, cancelRequestByWallet, deleteRequestById } from "../services/deletionService.js";
 import { getAllOverrides, setOverride, deleteOverride, clearAllOverrides } from "../services/rateOverridesService.js";
 import { incrementVisit, getVisitStats } from "../services/visitService.js";
+import { getOverrideHistory } from "../services/overrideHistoryService.js";
 
 const router = Router();
 
@@ -250,20 +251,33 @@ router.post("/admin/rate-overrides", (req, res): void => {
   if (!verifyAdmin(req, res)) return;
   const { code, buyPrice, sellPrice } = req.body as { code: string; buyPrice?: number; sellPrice?: number };
   if (!code) { res.status(400).json({ error: "code required" }); return; }
-  const entry = setOverride(code, buyPrice, sellPrice);
+  const entry = setOverride(code, buyPrice, sellPrice, "admin");
   res.json(entry);
 });
 
 router.delete("/admin/rate-overrides/:code", (req, res): void => {
   if (!verifyAdmin(req, res)) return;
-  const ok = deleteOverride(req.params.code);
+  const ok = deleteOverride(req.params.code, "admin");
   res.json({ success: ok });
 });
 
 router.delete("/admin/rate-overrides", (req, res): void => {
   if (!verifyAdmin(req, res)) return;
-  clearAllOverrides();
+  clearAllOverrides("admin");
   res.json({ success: true });
+});
+
+// ── Override History ─────────────────────────────────────────────────────────
+
+router.get("/admin/override-history", async (req, res): Promise<void> => {
+  if (!verifyAdmin(req, res)) return;
+  try {
+    const limit = Math.min(parseInt(String(req.query.limit ?? "50"), 10) || 50, 200);
+    const history = await getOverrideHistory(limit);
+    res.json(history);
+  } catch {
+    res.status(500).json({ error: "Failed to fetch override history" });
+  }
 });
 
 export default router;
