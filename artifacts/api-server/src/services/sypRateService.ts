@@ -1,5 +1,7 @@
 import { db, rateOverridesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import fs from "node:fs";
+import path from "node:path";
 
 const SYP_KEY = "syp";
 const DEFAULT_RATE = 13500;
@@ -30,6 +32,39 @@ export async function getSypRateSettings(): Promise<SypRateSettings> {
     isManual: row.isManual,
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+const JSON_FILE_PATH = path.resolve(process.cwd(), "syp-rate-settings.json");
+
+export async function migrateJsonFileToDB(): Promise<void> {
+  if (!fs.existsSync(JSON_FILE_PATH)) {
+    return;
+  }
+
+  const existing = await db
+    .select()
+    .from(rateOverridesTable)
+    .where(eq(rateOverridesTable.key, SYP_KEY))
+    .limit(1);
+
+  if (existing.length > 0) {
+    fs.rmSync(JSON_FILE_PATH);
+    return;
+  }
+
+  let parsed: SypRateSettings;
+  try {
+    const raw = fs.readFileSync(JSON_FILE_PATH, "utf-8");
+    parsed = JSON.parse(raw) as SypRateSettings;
+  } catch {
+    return;
+  }
+
+  if (typeof parsed.rate === "number" && parsed.rate > 0) {
+    await setSypRateSettings(parsed.rate, parsed.isManual ?? true);
+  }
+
+  fs.rmSync(JSON_FILE_PATH);
 }
 
 export async function setSypRateSettings(rate: number, isManual: boolean): Promise<SypRateSettings> {
