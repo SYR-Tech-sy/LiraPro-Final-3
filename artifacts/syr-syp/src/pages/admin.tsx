@@ -1302,7 +1302,9 @@ export default function AdminPage() {
   const [goldOverrideInput, setGoldOverrideInput] = useState('');
   const [goldOverrideActive, setGoldOverrideActive] = useState(false);
   const [goldOverrideMsg, setGoldOverrideMsg] = useState('');
+  const [goldOverrideUpdatedAt, setGoldOverrideUpdatedAt] = useState<string | null>(null);
   const [metalOverrides, setMetalOverrideState] = useState<Record<string, number>>({});
+  const [metalOverridesDetail, setMetalOverridesDetail] = useState<Record<string, { priceSYP: number; updatedAt: string }>>({});
   const [editMetal, setEditMetal] = useState<string | null>(null);
   const [editMetalVal, setEditMetalVal] = useState('');
   const [metalMsg, setMetalMsg] = useState('');
@@ -1897,10 +1899,13 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/settings/gold-rate');
       if (res.ok) {
-        const data = await res.json() as { isManual: boolean; override?: { pricePerGramSYP: number } };
+        const data = await res.json() as { isManual: boolean; override?: { pricePerGramSYP: number; updatedAt: string } };
         setGoldOverrideActive(data.isManual);
         if (data.isManual && data.override) {
           setGoldOverrideInput(data.override.pricePerGramSYP.toString());
+          setGoldOverrideUpdatedAt(data.override.updatedAt);
+        } else {
+          setGoldOverrideUpdatedAt(null);
         }
       }
     } catch {}
@@ -1910,10 +1915,15 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/settings/metal-rates');
       if (res.ok) {
-        const data = await res.json() as Record<string, { priceSYP: number }>;
+        const data = await res.json() as Record<string, { priceSYP: number; updatedAt: string }>;
         const map: Record<string, number> = {};
-        Object.entries(data).forEach(([sym, v]) => { map[sym] = v.priceSYP; });
+        const detail: Record<string, { priceSYP: number; updatedAt: string }> = {};
+        Object.entries(data).forEach(([sym, v]) => {
+          map[sym] = v.priceSYP;
+          detail[sym] = { priceSYP: v.priceSYP, updatedAt: v.updatedAt };
+        });
         setMetalOverrideState(map);
+        setMetalOverridesDetail(detail);
       }
     } catch {}
   }, []);
@@ -1941,6 +1951,7 @@ export default function AdminPage() {
       await fetch('/api/settings/gold-rate', { method: 'DELETE', headers: { 'X-Admin-Token': token ?? '' } });
       setGoldOverrideActive(false);
       setGoldOverrideInput('');
+      setGoldOverrideUpdatedAt(null);
       setGoldOverrideMsg('تم إلغاء التجاوز، سيعود للسعر التلقائي');
       refetchGold();
       setTimeout(() => setGoldOverrideMsg(''), 3000);
@@ -4713,6 +4724,149 @@ export default function AdminPage() {
           {activeTab === 'system' && (
             <motion.div key="system" variants={tabVariants} initial="hidden" animate="visible" exit="exit"
               className="flex flex-col gap-4">
+
+              {/* ── Price Overrides Status ── */}
+              {(() => {
+                const anyActive = sypRateIsManual || goldOverrideActive || Object.keys(metalOverridesDetail).length > 0;
+                const METAL_NAMES: Record<string, string> = {
+                  XAU: 'الذهب (أوقية)', XAG: 'الفضة', XPT: 'البلاتين', XPD: 'البلاديوم', XCU: 'النحاس',
+                };
+                return (
+                  <Card className={`border shadow-md overflow-hidden transition-all ${anyActive ? 'border-amber-300 dark:border-amber-700' : 'border-border'}`}>
+                    <div className="px-4 py-3 flex items-center justify-between"
+                      style={{ background: anyActive ? '#f59e0b18' : '#6b728010' }}>
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className={`w-4 h-4 ${anyActive ? 'text-amber-500' : 'text-muted-foreground'}`} />
+                        <span className="font-bold text-sm">حالة تجاوزات الأسعار</span>
+                      </div>
+                      {anyActive ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 animate-pulse">
+                          {[sypRateIsManual, goldOverrideActive, ...Object.keys(metalOverridesDetail).map(() => true)].filter(Boolean).length} نشط
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                          ⚡ كل شيء تلقائي
+                        </span>
+                      )}
+                    </div>
+                    <CardContent className="p-3 flex flex-col gap-2">
+                      {!anyActive && (
+                        <p className="text-xs text-muted-foreground text-center py-2">لا توجد تجاوزات يدوية نشطة. جميع الأسعار تُجلب تلقائياً من المصادر الخارجية.</p>
+                      )}
+
+                      {/* SYP Rate */}
+                      <div className={`rounded-xl border p-3 transition-all ${sypRateIsManual ? 'border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-900/15' : 'border-border bg-secondary/20'}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <DollarSign className={`w-3.5 h-3.5 flex-shrink-0 ${sypRateIsManual ? 'text-amber-600' : 'text-muted-foreground'}`} />
+                            <span className="text-xs font-bold truncate">سعر الدولار / ل.س</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black flex-shrink-0 ${sypRateIsManual ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
+                              {sypRateIsManual ? '✏ يدوي' : '⚡ تلقائي'}
+                            </span>
+                          </div>
+                          {sypRateIsManual && (
+                            <button
+                              onClick={() => void saveSypRate(false)}
+                              disabled={sypRateSaving}
+                              className="flex items-center gap-1 text-[9px] font-bold px-2 py-1 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors flex-shrink-0 ml-2"
+                            >
+                              <X className="w-2.5 h-2.5" /> إلغاء
+                            </button>
+                          )}
+                        </div>
+                        {sypRateIsManual && (
+                          <div className="mt-2 flex items-center justify-between">
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">القيمة المُطبَّقة</p>
+                              <p className="text-base font-black text-amber-700 dark:text-amber-300" dir="ltr">{sypRateCurrent.toLocaleString()} ل.س</p>
+                            </div>
+                            {sypRateUpdatedAt && (
+                              <div className="text-left">
+                                <p className="text-[9px] text-muted-foreground">آخر تعديل</p>
+                                <p className="text-[10px] font-bold">{timeAgo(sypRateUpdatedAt)}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Gold */}
+                      <div className={`rounded-xl border p-3 transition-all ${goldOverrideActive ? 'border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-900/15' : 'border-border bg-secondary/20'}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <Star className={`w-3.5 h-3.5 flex-shrink-0 ${goldOverrideActive ? 'text-amber-600' : 'text-muted-foreground'}`} />
+                            <span className="text-xs font-bold truncate">الذهب 24 قيراط</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black flex-shrink-0 ${goldOverrideActive ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
+                              {goldOverrideActive ? '✏ يدوي' : '⚡ تلقائي'}
+                            </span>
+                          </div>
+                          {goldOverrideActive && (
+                            <button
+                              onClick={() => void clearGoldOvr()}
+                              className="flex items-center gap-1 text-[9px] font-bold px-2 py-1 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors flex-shrink-0 ml-2"
+                            >
+                              <X className="w-2.5 h-2.5" /> إلغاء
+                            </button>
+                          )}
+                        </div>
+                        {goldOverrideActive && goldOverrideInput && (
+                          <div className="mt-2 flex items-center justify-between">
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">سعر الغرام المُطبَّق</p>
+                              <p className="text-base font-black text-amber-700 dark:text-amber-300" dir="ltr">{parseFloat(goldOverrideInput).toLocaleString()} ل.س</p>
+                            </div>
+                            {goldOverrideUpdatedAt && (
+                              <div className="text-left">
+                                <p className="text-[9px] text-muted-foreground">آخر تعديل</p>
+                                <p className="text-[10px] font-bold">{timeAgo(goldOverrideUpdatedAt)}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Active Metal Overrides */}
+                      {Object.entries(metalOverridesDetail).map(([sym, detail]) => (
+                        <div key={sym} className="rounded-xl border border-purple-200 dark:border-purple-800/60 bg-purple-50/50 dark:bg-purple-900/10 p-3 transition-all">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <CoinsIcon className="w-3.5 h-3.5 flex-shrink-0 text-purple-600" />
+                              <span className="text-xs font-bold truncate">{METAL_NAMES[sym] ?? sym}</span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black flex-shrink-0 bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+                                ✏ يدوي
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => void clearMetalOvr(sym)}
+                              className="flex items-center gap-1 text-[9px] font-bold px-2 py-1 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors flex-shrink-0 ml-2"
+                            >
+                              <X className="w-2.5 h-2.5" /> إلغاء
+                            </button>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between">
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">السعر المُطبَّق</p>
+                              <p className="text-base font-black text-purple-700 dark:text-purple-300" dir="ltr">{detail.priceSYP.toLocaleString()} ل.س</p>
+                            </div>
+                            <div className="text-left">
+                              <p className="text-[9px] text-muted-foreground">آخر تعديل</p>
+                              <p className="text-[10px] font-bold">{timeAgo(detail.updatedAt)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Refresh button */}
+                      <button
+                        onClick={() => { fetchSypRate(); void fetchGoldOverride(); void fetchMetalOverrides(); }}
+                        className="flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors py-1"
+                      >
+                        <RefreshCw className="w-3 h-3" /> تحديث الحالة
+                      </button>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
 
               {/* Badge reference card */}
               <Card className="border-border shadow-sm overflow-hidden">
