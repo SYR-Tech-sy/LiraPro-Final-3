@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApp } from '@/context/app-context';
 import { LiveBadge } from '@/components/live-badge';
+import { ManualBadge } from '@/components/manual-badge';
 
 const PINNED = ['SYP', 'USD', 'TRY', 'EUR', 'AED', 'SAR'];
 const EXCLUDED = ['ILS', 'IRR'];
@@ -168,6 +169,7 @@ export default function ConverterPage() {
   const { formatNum, getBuyRate, getSellRate, t, language } = useApp();
 
   const rates = ratesData?.rates ?? {};
+  const isManualRate = ratesData?.is_manual_rate ?? false;
   const localUsdToSyp = ratesData?.usd_to_syp ?? 0;
   const globalUsdToSyp = (ratesData as unknown as { global_usd_to_syp?: number } | undefined)?.global_usd_to_syp ?? localUsdToSyp;
 
@@ -448,8 +450,9 @@ export default function ConverterPage() {
                     {formatNum(result, { decimals: toCurrency === 'SYP' ? 0 : 2 })}
                   </span>
                   <span className="text-lg ml-1 font-medium" dir="ltr">{toCurrency}</span>
-                  <p className="text-xs text-foreground/60 dark:text-white/70 mt-1" dir="ltr">
+                  <p className="text-xs text-foreground/60 dark:text-white/70 mt-1 flex items-center justify-center gap-1.5" dir="ltr">
                     1 {fromCurrency} = {formatNum(displayRate, { decimals: toCurrency === 'SYP' ? 0 : 4 })} {toCurrency}
+                    {isManualRate && <ManualBadge />}
                   </p>
                   <p className="text-[10px] text-accent font-semibold mt-0.5">
                     {language === 'ar' ? `سعر ${buySellMode === 'buy' ? t('buy') : t('sell')}` : `${buySellMode === 'buy' ? t('buy') : t('sell')} rate`}
