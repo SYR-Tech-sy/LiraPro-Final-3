@@ -190,85 +190,7 @@
     }
   ],
   "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84": [],
-  "8751d349-9ed6-42d8-8e81-d54adf2eb210": [
-    {
-      "id": 1780683698321,
-      "title": "تم رفع التقييد عن حسابك",
-      "body": "تم رفع التقييد عن حسابك على منصة LiraPro. يمكنك الآن استخدام جميع مزايا المنصة.",
-      "type": "success",
-      "icon": "admin",
-      "sender": "LiraPro",
-      "recipient": "specific",
-      "targetWalletId": "8751d349-9ed6-42d8-8e81-d54adf2eb210",
-      "createdAt": "2026-06-05T18:21:38.321Z"
-    },
-    {
-      "id": 1780683682718,
-      "title": "تم استرجاع حسابك",
-      "body": "تم استرجاع حسابك على منصة LiraPro بنجاح. يمكنك الآن تسجيل الدخول واستخدام خدمات المنصة.",
-      "type": "success",
-      "icon": "admin",
-      "sender": "LiraPro",
-      "recipient": "specific",
-      "targetWalletId": "8751d349-9ed6-42d8-8e81-d54adf2eb210",
-      "createdAt": "2026-06-05T18:21:22.718Z"
-    },
-    {
-      "id": 1780683670498,
-      "title": "تم حذف حسابك",
-      "body": "تم حذف حسابك من منصة LiraPro. تواصل مع الدعم للاستفسار.",
-      "type": "warning",
-      "icon": "admin",
-      "sender": "LiraPro",
-      "recipient": "specific",
-      "targetWalletId": "8751d349-9ed6-42d8-8e81-d54adf2eb210",
-      "createdAt": "2026-06-05T18:21:10.498Z"
-    },
-    {
-      "id": 1780683648809,
-      "title": "تم تقييد حسابك",
-      "body": "تم تقييد حسابك على منصة LiraPro. للاستفسار تواصل مع الدعم.",
-      "type": "warning",
-      "icon": "admin",
-      "sender": "LiraPro",
-      "recipient": "specific",
-      "targetWalletId": "8751d349-9ed6-42d8-8e81-d54adf2eb210",
-      "createdAt": "2026-06-05T18:20:48.809Z"
-    },
-    {
-      "id": 1780680532535,
-      "title": "تم حذف حسابك",
-      "body": "تم حذف حسابك من منصة LiraPro. تواصل مع الدعم للاستفسار.",
-      "type": "warning",
-      "icon": "admin",
-      "sender": "LiraPro",
-      "recipient": "specific",
-      "targetWalletId": "8751d349-9ed6-42d8-8e81-d54adf2eb210",
-      "createdAt": "2026-06-05T17:28:52.535Z"
-    },
-    {
-      "id": 1780679419090,
-      "title": "تم تقييد حسابك لمدة 1 يوم",
-      "body": "تم تقييد حسابك على منصة LiraPro مؤقتاً لمدة 1 يوماً.",
-      "type": "warning",
-      "icon": "admin",
-      "sender": "LiraPro",
-      "recipient": "specific",
-      "targetWalletId": "8751d349-9ed6-42d8-8e81-d54adf2eb210",
-      "createdAt": "2026-06-05T17:10:19.090Z"
-    },
-    {
-      "id": 1780679404250,
-      "title": "تم توثيق حسابك ✓",
-      "body": "تهانينا! تم توثيق حسابك. ستظهر علامة التوثيق بجانب اسمك الآن.",
-      "type": "success",
-      "icon": "admin",
-      "sender": "LiraPro",
-      "recipient": "specific",
-      "targetWalletId": "8751d349-9ed6-42d8-8e81-d54adf2eb210",
-      "createdAt": "2026-06-05T17:10:04.250Z"
-    }
-  ],
+  "8751d349-9ed6-42d8-8e81-d54adf2eb210": [],
   "test-uid-123": [
     {
       "id": 1780682011429,
@@ -282,5 +204,18 @@
     }
   ],
   "test-wallet-123": [],
-  "some-user-id": []
+  "some-user-id": [],
+  "acb4b114-b7e7-4b4e-9c37-ef9e0ce22760": [
+    {
+      "id": 1780843824930,
+      "title": "تم رفع الحظر عن حسابك",
+      "body": "تم رفع الحظر عن حسابك على منصة LiraPro. يمكنك الآن استخدام جميع مزايا المنصة بشكل طبيعي.",
+      "type": "success",
+      "icon": "admin",
+      "sender": "LiraPro",
+      "recipient": "specific",
+      "targetWalletId": "acb4b114-b7e7-4b4e-9c37-ef9e0ce22760",
+      "createdAt": "2026-06-07T14:50:24.930Z"
+    }
+  ]
 }

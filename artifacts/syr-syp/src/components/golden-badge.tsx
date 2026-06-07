@@ -615,7 +615,7 @@ export const ChatBadge = React.memo(function ChatBadge({
         }
       `}</style>
       <span style={{ display:'inline-flex', overflow:'visible', animation:`cbglow-${animKey} 2.0s ease-in-out infinite` }}>
-        {isLegendary ? <RainbowBadge size={size} /> : <AdminBadge size={size} />}
+        {isLegendary ? <RainbowBadge size={size} showGlow={false} /> : <AdminBadge size={size} showGlow={false} />}
       </span>
     </span>
   );

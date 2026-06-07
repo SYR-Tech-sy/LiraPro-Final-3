@@ -475,6 +475,49 @@ router.patch("/user-messages/:id/read", async (req, res): Promise<void> => {
   }
 });
 
+// ── User notifications from local JSON (fallback when Supabase write fails) ───
+router.get("/user-notifications", async (req, res): Promise<void> => {
+  const authHeader = req.headers.authorization as string | undefined;
+  if (!authHeader?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const token = authHeader.slice(7);
+  try {
+    const { data: { user } } = await supabaseAdmin!.auth.getUser(token);
+    if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const all = readUserNotifs();
+    const msgs = (all[user.id] ?? []) as Array<Record<string, unknown>>;
+    res.json(msgs.map(m => ({
+      id: m.id ?? Date.now(),
+      title: m.title ?? '',
+      body: m.body ?? '',
+      type: m.type ?? 'admin_message',
+      user_id: user.id,
+      read: (m as { read?: boolean }).read ?? false,
+      created_at: m.createdAt ?? new Date().toISOString(),
+    })));
+  } catch {
+    res.json([]);
+  }
+});
+
+// ── Mark local notification as read ──────────────────────────────────────────
+router.patch("/user-notifications/:id/read", async (req, res): Promise<void> => {
+  const authHeader = req.headers.authorization as string | undefined;
+  if (!authHeader?.startsWith("Bearer ")) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const token = authHeader.slice(7);
+  try {
+    const { data: { user } } = await supabaseAdmin!.auth.getUser(token);
+    if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const all = readUserNotifs();
+    const msgs = (all[user.id] ?? []) as Array<Record<string, unknown>>;
+    const targetId = Number(req.params.id);
+    all[user.id] = msgs.map(m => m.id === targetId ? { ...m, read: true } : m);
+    saveUserNotifs(all);
+    res.json({ success: true });
+  } catch {
+    res.json({ success: false });
+  }
+});
+
 // ── App settings ──────────────────────────────────────────────────────────────
 router.get("/admin/app-settings", async (_req, res): Promise<void> => {
   try {

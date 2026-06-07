@@ -117,8 +117,7 @@ export function banUser(walletId: string, reason: string): boolean {
 
 export function unbanUser(walletId: string): boolean {
   const data = readData();
-  const u = data.users.find((u) => u.walletId === walletId || u.supabaseId === walletId);
-  if (!u) return false;
+  const u = findOrCreate(data, walletId);
   u.banned = false;
   u.banReason = undefined;
   u.bannedAt = undefined;

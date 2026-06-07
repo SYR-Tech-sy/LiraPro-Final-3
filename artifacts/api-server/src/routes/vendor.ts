@@ -17,11 +17,29 @@ async function requireVendor(
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const [user] = await db.select({ role: usersTable.role }).from(usersTable).where(eq(usersTable.supabaseId, userId));
-    if (!user || (user.role !== "vendor" && user.role !== "admin")) {
-      res.status(403).json({ error: "Forbidden: vendor access only" });
-      return;
+    if (user && (user.role === "vendor" || user.role === "admin")) { next(); return; }
+    // Fallback: check Supabase vendors table (admin-created vendors)
+    const { data: supaVendor } = await supabaseAdmin!
+      .from("vendors")
+      .select("id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (supaVendor) {
+      // Auto-register in usersTable so future checks pass
+      if (!user) {
+        const { data: supaUser } = await supabaseAdmin!.auth.admin.getUserById(userId);
+        await db.insert(usersTable).values({
+          supabaseId: userId,
+          email: supaUser?.user?.email ?? "",
+          role: "vendor",
+          profileCompleted: false,
+        }).onConflictDoNothing();
+      } else {
+        await db.update(usersTable).set({ role: "vendor" }).where(eq(usersTable.supabaseId, userId));
+      }
+      next(); return;
     }
-    next();
+    res.status(403).json({ error: "Forbidden: vendor access only" });
   } catch (err) {
     req.log.error({ err }, "requireVendor DB error");
     res.status(500).json({ error: "Internal server error" });
@@ -143,7 +161,7 @@ router.post("/vendor/prices", requireSupabaseAuth, requireVendor, async (req, re
       // Fallback: admin-created vendors in Supabase vendors table
       const { data: vendor } = await supabaseAdmin!
         .from("vendors")
-        .select("category_ids, governorate, city")
+        .select("*")
         .eq("user_id", userId)
         .single();
       if (!vendor) { res.status(404).json({ error: "Vendor profile not found" }); return; }
@@ -153,6 +171,26 @@ router.post("/vendor/prices", requireSupabaseAuth, requireVendor, async (req, re
         : "local_market";
       vendorGov = (v.governorate as string) || null;
       vendorCity = (v.city as string) || null;
+      // Auto-create vendorProfilesTable row so market-prices inner join works
+      try {
+        const { data: supaUser } = await supabaseAdmin!.auth.admin.getUserById(userId);
+        await db.insert(vendorProfilesTable).values({
+          supabaseId: userId,
+          businessName: (v.business_name as string) || "بدون اسم",
+          fullName: (v.owner_name as string) || "",
+          email: (v.email as string) || supaUser?.user?.email || "",
+          phone: (v.phone as string) || "",
+          governorate: vendorGov || "",
+          city: vendorCity || "",
+          address: (v.address as string) || "",
+          category: vendorCategory as import("@workspace/db").VendorCategory,
+          trustScore: typeof v.trust_score === "number" ? (v.trust_score as number) * 10 : 50,
+          isActive: (v.is_active as boolean) ?? true,
+          logoUrl: (v.logo_url as string) || null,
+        }).onConflictDoNothing();
+      } catch (profileErr) {
+        req.log.warn({ profileErr }, "Auto-create vendorProfile failed (non-fatal)");
+      }
     }
 
     const body = req.body as Record<string, unknown>;
@@ -189,8 +227,14 @@ router.put("/vendor/prices/:id", requireSupabaseAuth, requireVendor, async (req,
   try {
     const userId = req.supabaseUserId!;
     const id = Number(req.params.id);
-    const parsed = updateVendorPriceSchema.safeParse(req.body);
-    if (!parsed.success) { res.status(400).json({ error: "Invalid data" }); return; }
+    // Coerce numeric fields from strings (frontend sends JSON strings for number inputs)
+    const raw = req.body as Record<string, unknown>;
+    const coerced: Record<string, unknown> = { ...raw };
+    if (raw.price !== undefined) coerced.price = Number(raw.price) || undefined;
+    if (raw.priceBuy !== undefined) coerced.priceBuy = raw.priceBuy === null || raw.priceBuy === '' ? null : Number(raw.priceBuy) || null;
+    if (raw.priceSell !== undefined) coerced.priceSell = raw.priceSell === null || raw.priceSell === '' ? null : Number(raw.priceSell) || null;
+    const parsed = updateVendorPriceSchema.safeParse(coerced);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid data", details: parsed.error.issues }); return; }
 
     const [existing] = await db.select({ vendorSupabaseId: vendorPricesTable.vendorSupabaseId })
       .from(vendorPricesTable).where(eq(vendorPricesTable.id, id));
@@ -273,7 +317,21 @@ router.put("/vendor/profile", requireSupabaseAuth, requireVendor, async (req, re
       .where(eq(vendorProfilesTable.supabaseId, userId))
       .returning();
 
-    if (updated) { res.json(updated); return; }
+    if (updated) {
+      // Also sync to Supabase vendors table so admin panel sees updated data
+      try {
+        const supaUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (body.businessName !== undefined) supaUpdate.business_name = body.businessName;
+        if (body.phone !== undefined) supaUpdate.phone = body.phone;
+        if (body.address !== undefined) supaUpdate.address = body.address;
+        if (body.governorate !== undefined) supaUpdate.governorate = body.governorate;
+        if (body.city !== undefined) supaUpdate.city = body.city;
+        if (body.logoUrl !== undefined) supaUpdate.logo_url = body.logoUrl;
+        if (body.description !== undefined) supaUpdate.description = body.description;
+        await supabaseAdmin!.from("vendors").update(supaUpdate).eq("user_id", userId);
+      } catch { /* non-blocking — vendor profile in Drizzle is source of truth */ }
+      res.json(updated); return;
+    }
 
     // Fallback: admin-created vendors in Supabase vendors table
     const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };

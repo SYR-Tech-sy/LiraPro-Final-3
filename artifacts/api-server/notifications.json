@@ -8,5 +8,15 @@
     "sender": "LiraPro",
     "recipient": "all",
     "createdAt": "2026-06-04T13:53:37.464Z"
+  },
+  {
+    "id": 1780843782724,
+    "title": "نننن",
+    "body": "مممم",
+    "type": "info",
+    "icon": "bell",
+    "sender": "LiraPro",
+    "recipient": "all",
+    "createdAt": "2026-06-07T14:49:42.724Z"
   }
 ]

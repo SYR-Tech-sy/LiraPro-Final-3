@@ -164,9 +164,27 @@ export default function ProfilePage() {
       setAdminMsgLoading(true);
       try {
         const tok = await getToken();
-        const res = await fetch('/api/user-messages', { headers: { Authorization: `Bearer ${tok}` } });
-        if (res.ok) setAdminMessages(await res.json() as AdminMsg[]);
-      } catch {} finally { setAdminMsgLoading(false); }
+        const headers = { Authorization: `Bearer ${tok}` };
+        // Try local JSON first (guaranteed delivery), then Supabase as supplement
+        const [localRes, supaRes] = await Promise.allSettled([
+          fetch('/api/user-notifications', { headers }),
+          fetch('/api/user-messages', { headers }),
+        ]);
+        const local: AdminMsg[] = localRes.status === 'fulfilled' && localRes.value.ok
+          ? (await localRes.value.json() as AdminMsg[])
+          : [];
+        const supa: AdminMsg[] = supaRes.status === 'fulfilled' && supaRes.value.ok
+          ? (await supaRes.value.json() as AdminMsg[])
+          : [];
+        // Merge, deduplicate by title+body (local JSON may duplicate Supabase entries)
+        const seen = new Set<string>();
+        const merged: AdminMsg[] = [];
+        for (const m of [...local, ...supa]) {
+          const key = `${m.title}::${m.body}`;
+          if (!seen.has(key)) { seen.add(key); merged.push(m); }
+        }
+        setAdminMessages(merged);
+      } catch { setAdminMessages([]); } finally { setAdminMsgLoading(false); }
     };
     void load();
   }, [isSignedIn, getToken]);
@@ -175,7 +193,9 @@ export default function ProfilePage() {
     setAdminMessages(prev => prev.map(m => m.id === id ? { ...m, read: true } : m));
     try {
       const tok = await getToken();
-      fetch(`/api/user-messages/${id}/read`, { method: 'PATCH', headers: { Authorization: `Bearer ${tok}` } }).catch(() => {});
+      const headers = { Authorization: `Bearer ${tok}` };
+      fetch(`/api/user-notifications/${id}/read`, { method: 'PATCH', headers }).catch(() => {});
+      fetch(`/api/user-messages/${id}/read`, { method: 'PATCH', headers }).catch(() => {});
     } catch {}
   };
 
@@ -505,7 +525,7 @@ export default function ProfilePage() {
           </div>
           {/* Name, email, LPH, verify status */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+            <div className="flex items-center gap-0.5 flex-wrap mb-0.5">
               <h2 className="text-lg font-bold truncate">
                 {profile?.firstName || user?.user_metadata?.first_name} {profile?.lastName || user?.user_metadata?.last_name}
               </h2>
@@ -986,7 +1006,7 @@ export default function ProfilePage() {
       </Card>
 
       {/* Admin Messages Inbox */}
-      {(adminMsgLoading || adminMessages.length > 0) && (
+      {(adminMsgLoading || adminMessages.length > 0 || true) && (
         <div className="rounded-xl border border-primary/20 bg-card overflow-hidden">
           <button
             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/30 transition-colors"

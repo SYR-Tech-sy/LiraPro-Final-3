@@ -1379,8 +1379,8 @@ export default function AdminPage() {
   const [deleteReason, setDeleteReason] = useState('');
 
   // Vendor management state (React Query)
-  const { data: vendors = [] } = useQuery({ queryKey: ['admin-vendors', token], queryFn: () => adminFetchVendors(token!), enabled: !!token });
-  const { data: vendorApplications = [] } = useQuery({ queryKey: ['admin-vendor-apps', token], queryFn: () => adminFetchVendorApplications(token!), enabled: !!token });
+  const { data: vendors = [] } = useQuery({ queryKey: ['admin-vendors', token], queryFn: () => adminFetchVendors(token!), enabled: !!token, refetchInterval: 30000 });
+  const { data: vendorApplications = [] } = useQuery({ queryKey: ['admin-vendor-apps', token], queryFn: () => adminFetchVendorApplications(token!), enabled: !!token, refetchInterval: 10000, refetchOnMount: true, staleTime: 0 });
   // adminFetchAdminMessages kept for future use; messages now stored in localStorage via localSentMsgs
   void adminFetchAdminMessages;
   const { data: verifyRequests = [] } = useQuery({ queryKey: ['admin-verify-reqs', token], queryFn: () => adminFetchVerifyRequests(token!), enabled: !!token });

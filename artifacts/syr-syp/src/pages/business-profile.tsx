@@ -65,6 +65,7 @@ export default function BusinessProfilePage() {
 
   const GOVERNORATES = ['إدلب','دمشق','ريف دمشق','حلب','حمص','حماة','اللاذقية','طرطوس','دير الزور','الرقة','الحسكة','درعا','السويداء','القنيطرة'];
   const [govOpen, setGovOpen] = useState(false);
+  const [logoViewOpen, setLogoViewOpen] = useState(false);
 
   const { data: vendorData, isLoading: loading, refetch: loadData } = useQuery({
     queryKey: ['vendor-profile'],
@@ -166,6 +167,7 @@ export default function BusinessProfilePage() {
   );
 
   return (
+    <>
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4 pb-10" dir="rtl">
 
       {/* Header */}
@@ -183,8 +185,13 @@ export default function BusinessProfilePage() {
           <div className="absolute -top-10 right-4">
             <div className="relative">
               {(editData.logoUrl || profile?.logoUrl) ? (
-                <img src={editData.logoUrl || profile?.logoUrl} alt="Logo"
-                  className="w-20 h-20 rounded-2xl object-cover border-4 border-card shadow-lg" />
+                <img
+                  src={editData.logoUrl || profile?.logoUrl}
+                  alt="Logo"
+                  className="w-20 h-20 rounded-2xl object-cover border-4 border-card shadow-lg cursor-pointer hover:opacity-90 transition-opacity"
+                  onClick={() => !editing && setLogoViewOpen(true)}
+                  title={editing ? undefined : 'عرض الصورة'}
+                />
               ) : (
                 <div className="w-20 h-20 rounded-2xl bg-primary/10 border-4 border-card shadow-lg flex items-center justify-center">
                   <Building2 className="w-10 h-10 text-primary" />
@@ -386,5 +393,28 @@ export default function BusinessProfilePage() {
       </Card>
 
     </motion.div>
+
+    {/* Logo preview lightbox */}
+    {logoViewOpen && (editData.logoUrl || profile?.logoUrl) && (
+      <div
+        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        onClick={() => setLogoViewOpen(false)}
+      >
+        <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
+          <img
+            src={editData.logoUrl || profile?.logoUrl}
+            alt="شعار النشاط"
+            className="max-w-[80vw] max-h-[80vh] rounded-2xl object-contain shadow-2xl border-2 border-white/20"
+          />
+          <button
+            onClick={() => setLogoViewOpen(false)}
+            className="absolute -top-3 -left-3 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center text-lg hover:bg-black/80 transition-colors"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
