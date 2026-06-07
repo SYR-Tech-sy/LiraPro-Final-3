@@ -19,6 +19,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useGetExchangeRates, useGetGoldPrices } from '@workspace/api-client-react';
 import { AdminBadge, RainbowBadge, GoldenBadge, BlueBadge, ChatBadge } from '@/components/golden-badge';
+import { usePollingCallback } from '@/hooks/use-polling-callback';
+import { useDataEffect } from '@/hooks/use-data-effect';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -423,13 +425,7 @@ function AdminTicketsPanel({ onOpenConv }: { onOpenConv?: (userId: string) => vo
     setLoading(false);
   }, []);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  React.useEffect(() => {
-    void refresh();
-    const t = setInterval(() => void refresh(), 6000);
-    return () => clearInterval(t);
-  }, [refresh]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  usePollingCallback(refresh, 6000);
 
   const selTicket = selId ? tickets.find(t => t.id === selId) ?? null : null;
 
@@ -737,13 +733,7 @@ function AdminSupportPanel({ initUserId, onImageClick, openConfirm }: { initUser
 
   const loadConvs = React.useCallback(() => setConvs(getAllConvs()), []);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  React.useEffect(() => {
-    loadConvs();
-    const t = setInterval(loadConvs, 3000);
-    return () => clearInterval(t);
-  }, [loadConvs]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  usePollingCallback(loadConvs, 3000);
 
   React.useEffect(() => {
     if (selUserId) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -2083,11 +2073,7 @@ export default function AdminPage() {
     refetchRates(); refetchGold(); fetchBroadcast();
   }, [fetchStats, fetchUsers, fetchDeletionRequests, fetchBuySellOverrides, fetchNotifications, fetchSypRate, fetchGoldOverride, fetchMetalOverrides, fetchKaratOverrides, fetchVendors, fetchVendorApplications, fetchAdminMessages, refetchRates, refetchGold, fetchBroadcast]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (token) { refreshAll(); }
-  }, [token, refreshAll]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  useDataEffect(() => { if (token) void refreshAll(); }, [token, refreshAll]);
 
   /** Returns the current Supabase access token to send as Authorization header. */
   const getSupabaseToken = useCallback(async (): Promise<string> => {
@@ -2138,8 +2124,7 @@ export default function AdminPage() {
   }, [broadcastActive]);
 
   // Compute AI rating stats from all stored conversations
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
+  useDataEffect(() => {
     const dailyMap: Record<string, { up: number; down: number }> = {};
     let totalUp = 0, totalDown = 0;
     for (const key of Object.keys(localStorage)) {
@@ -2163,7 +2148,6 @@ export default function AdminPage() {
   }, [token]);
 
   // ── Supabase Real-Time Subscriptions ──────────────────────────────────────
-  /* eslint-enable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!token) return;
     const channel = supabase
@@ -2187,8 +2171,7 @@ export default function AdminPage() {
     return () => { supabase.removeChannel(channel); };
   }, [token, fetchUsers, fetchStats, fetchVendorApplications, fetchVendors, fetchDeletionRequests]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
+  useDataEffect(() => {
     if (!vendorDetail?.supabaseId || !token) { setVendorDetailPrices([]); return; }
     setVendorPricesLoading(true);
     fetch(`/api/admin/vendors/${vendorDetail.supabaseId}/prices`, {
@@ -2199,7 +2182,6 @@ export default function AdminPage() {
       .catch(() => setVendorDetailPrices([]))
       .finally(() => setVendorPricesLoading(false));
   }, [vendorDetail?.supabaseId, token]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     const lphMap: Record<string, string> = {};
@@ -2735,11 +2717,7 @@ export default function AdminPage() {
     } catch {}
   }, [token]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (token) void loadVerifyRequests();
-  }, [token, loadVerifyRequests]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  useDataEffect(() => { if (token) void loadVerifyRequests(); }, [token, loadVerifyRequests]);
 
   const handleVerifyApprove = (req: VerifyRequest) => {
     try {

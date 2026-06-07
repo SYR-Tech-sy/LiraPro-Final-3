@@ -415,7 +415,7 @@ export default function SupportPage() {
   const [recordingBarHeights] = useState(() => [1, 2, 3, 4, 5, 6, 7, 8].map(() => Math.random() * 16 + 4));
   const [micError, setMicError] = useState('');
   const mediaRecRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]); // eslint-disable-line react-hooks/purity
+  const chunksRef = useRef<Blob[]>([]);
   const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Voice-to-text (Speech Recognition)

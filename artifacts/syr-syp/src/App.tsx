@@ -18,6 +18,7 @@ import { GuestModal } from '@/components/guest-modal';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { AnimatedLogo } from '@/components/animated-logo';
 import { OfflineBar } from '@/components/offline-bar';
+import { useDataEffect } from '@/hooks/use-data-effect';
 import { FloatingAiButton } from '@/components/floating-ai-button';
 import { saveQueryToCache, loadCachedQueries } from '@/lib/offline-cache';
 
@@ -144,8 +145,7 @@ function GreetingBar() {
   const h = new Date().getHours();
   const [profileFirstName, setProfileFirstName] = useState('');
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
+  useDataEffect(() => {
     if (!isSignedIn) { setProfileFirstName(''); return; }
     let cancelled = false;
     (async () => {
@@ -161,7 +161,6 @@ function GreetingBar() {
     })();
     return () => { cancelled = true; };
   }, [isSignedIn, getToken]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const greeting = (() => {
     if (ar) {
@@ -255,8 +254,7 @@ function useVendorInfo() {
     } catch { /* keep cached */ }
   }, []);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
+  useDataEffect(() => {
     if (!isSignedIn) {
       setIsVendor(false);
       setBusinessName('');
@@ -292,7 +290,6 @@ function useVendorInfo() {
       document.removeEventListener('syp-vendor-approved', onFocus as EventListener);
     };
   }, [isSignedIn, getToken, checkVendorStatus]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   return { isVendor, businessName };
 }
@@ -1078,13 +1075,11 @@ function BanGuard({ children }: { children: React.ReactNode }) {
     signedOutRef.current = false;
   }, []);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  React.useEffect(() => {
+  useDataEffect(() => {
     if (status?.restricted && status.restrictedUntil && new Date(status.restrictedUntil) <= new Date()) {
       clearBlockedStatus();
     }
   }, [status?.restricted, status?.restrictedUntil, clearBlockedStatus]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Only block rendering if we have a confirmed bad status from cache
   // This prevents a blank spinner on every page load for normal users

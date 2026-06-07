@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Link, useLocation, useSearch } from 'wouter';
 import { useApp } from '@/context/app-context';
 import { useUser } from '@/context/auth-context';
+import { useDataEffect } from '@/hooks/use-data-effect';
 import { AnimatedLogo } from '@/components/animated-logo';
 import { LiveBadge, useMarketOpen } from '@/components/live-badge';
 import { GoldenBadge } from '@/components/golden-badge';
@@ -155,8 +156,7 @@ function CatFilterRow({ cats, category, setCategory, searchStr }: {
   const [highlight, setHighlight] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
+  useDataEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const params = new URLSearchParams(searchStr);
@@ -168,7 +168,6 @@ function CatFilterRow({ cats, category, setCategory, searchStr }: {
     } catch { /* ignore */ }
     return () => { if (timer) clearTimeout(timer); };
   }, [searchStr]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <div ref={rowRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>

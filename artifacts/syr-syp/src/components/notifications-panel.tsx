@@ -5,6 +5,7 @@ import { GoldenBadge, AdminBadge, RainbowBadge } from './golden-badge';
 import { useCheckAlerts } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUser } from '@/context/auth-context';
+import { usePollingCallback } from '@/hooks/use-polling-callback';
 
 interface Notification {
   id: number;
@@ -214,13 +215,7 @@ export function NotificationsPanel() {
     }
   }, []);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 8 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchNotifications]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  usePollingCallback(fetchNotifications, 8 * 1000);
 
   useEffect(() => {
     const interval = setInterval(() => {

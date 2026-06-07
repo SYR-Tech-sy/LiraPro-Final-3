@@ -119,7 +119,6 @@ export default function ProfilePage() {
   const { t } = useApp();
   // cardMode: closed = collapsed button only, view = read-only data, edit = form
   const [cardMode, setCardMode] = useState<'closed' | 'view' | 'edit'>('closed');
-  const [forceComplete, setForceComplete] = useState(false);
   const [showFullPhoto, setShowFullPhoto] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
@@ -218,12 +217,12 @@ export default function ProfilePage() {
     return encodeURIComponent(token);
   }, [user?.id]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!user?.id) return;
-    setSessions(ensureCurrentSession(user.id));
-  }, [user?.id]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  // Derived-state-in-render: re-initialize sessions when the signed-in user changes.
+  const prevSessionsUserIdRef = useRef<string | undefined>(user?.id);
+  if (prevSessionsUserIdRef.current !== user?.id) {
+    prevSessionsUserIdRef.current = user?.id;
+    setSessions(user?.id ? ensureCurrentSession(user.id) : []);
+  }
 
   const removeSession = useCallback((sessionId: string) => {
     if (!user?.id) return;
@@ -423,15 +422,7 @@ export default function ProfilePage() {
   }, [profile, user, form]);
 
   /* Force completion modal if profile is incomplete (cannot be dismissed) */
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!loadingProfile && isSignedIn && profile && !profile.profileCompleted) {
-      setForceComplete(true);
-    } else {
-      setForceComplete(false);
-    }
-  }, [profile, loadingProfile, isSignedIn]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  const forceComplete = !loadingProfile && isSignedIn && !!profile && !profile.profileCompleted;
 
   const onSubmit = (data: ProfileFormValues) => {
     updateProfile.mutate({ data }, {
@@ -439,7 +430,6 @@ export default function ProfilePage() {
         toast.success("تم حفظ بياناتك بنجاح");
         refetch();
         setCardMode('view');
-        setForceComplete(false);
       },
       onError: () => { toast.error("حدث خطأ أثناء حفظ البيانات، حاول مرة أخرى"); }
     });
@@ -1344,7 +1334,7 @@ export default function ProfilePage() {
                   {/* Home button — top right */}
                   <button
                     type="button"
-                    onClick={() => { setForceComplete(false); navigate('/'); }}
+                    onClick={() => { navigate('/'); }}
                     className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/15 hover:bg-white/25 transition-colors text-white/80 hover:text-white text-xs font-bold"
                     title="الصفحة الرئيسية"
                   >
