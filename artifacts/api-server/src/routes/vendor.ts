@@ -33,7 +33,6 @@ router.get("/vendor/profile", requireSupabaseAuth, requireVendor, async (req, re
   try {
     const userId = req.supabaseUserId!;
 
-    // Primary: Drizzle vendor_profiles table
     const [profile] = await db.select().from(vendorProfilesTable).where(eq(vendorProfilesTable.supabaseId, userId));
     if (profile) { res.json(profile); return; }
 
@@ -56,6 +55,7 @@ router.get("/vendor/profile", requireSupabaseAuth, requireVendor, async (req, re
         governorate: v.governorate ?? "",
         city: v.city ?? "",
         address: v.address ?? "",
+        description: v.description ?? "",
         category: Array.isArray(v.category_ids) && (v.category_ids as string[]).length > 0
           ? (v.category_ids as string[])[0]
           : "local_market",
@@ -74,29 +74,24 @@ router.get("/vendor/profile", requireSupabaseAuth, requireVendor, async (req, re
 });
 
 // ── POST /vendor/link-by-email ────────────────────────────────────────────────
-// Called on login: if the user's Supabase email matches an approved vendor profile,
-// link their current userId to it and grant vendor role.
 router.post("/vendor/link-by-email", requireSupabaseAuth, async (req, res): Promise<void> => {
   try {
     const userId = req.supabaseUserId!;
     const email = req.supabaseUserEmail?.toLowerCase().trim();
     if (!email) { res.status(400).json({ error: "No email in session" }); return; }
 
-    // Find a vendor profile by email (case-insensitive)
     const [profile] = await db
       .select()
       .from(vendorProfilesTable)
       .where(sql`lower(${vendorProfilesTable.email}) = ${email}`);
     if (!profile) { res.status(404).json({ error: "No vendor profile for this email" }); return; }
 
-    // Link this session's userId to the profile (idempotent)
     const [updated] = await db
       .update(vendorProfilesTable)
       .set({ supabaseId: userId })
       .where(eq(vendorProfilesTable.id, profile.id))
       .returning();
 
-    // Upsert user row with vendor role
     const [existingUser] = await db.select().from(usersTable).where(eq(usersTable.supabaseId, userId));
     if (existingUser) {
       await db.update(usersTable).set({ role: "vendor", updatedAt: new Date() }).where(eq(usersTable.supabaseId, userId));
@@ -131,28 +126,53 @@ router.get("/vendor/prices", requireSupabaseAuth, requireVendor, async (req, res
 router.post("/vendor/prices", requireSupabaseAuth, requireVendor, async (req, res): Promise<void> => {
   try {
     const userId = req.supabaseUserId!;
+
+    // Try vendorProfilesTable first
     const [profile] = await db.select({ category: vendorProfilesTable.category, governorate: vendorProfilesTable.governorate, city: vendorProfilesTable.city })
       .from(vendorProfilesTable).where(eq(vendorProfilesTable.supabaseId, userId));
-    if (!profile) { res.status(404).json({ error: "Vendor profile not found" }); return; }
+
+    let vendorCategory: string;
+    let vendorGov: string | null;
+    let vendorCity: string | null;
+
+    if (profile) {
+      vendorCategory = profile.category;
+      vendorGov = profile.governorate || null;
+      vendorCity = profile.city || null;
+    } else {
+      // Fallback: admin-created vendors in Supabase vendors table
+      const { data: vendor } = await supabaseAdmin!
+        .from("vendors")
+        .select("category_ids, governorate, city")
+        .eq("user_id", userId)
+        .single();
+      if (!vendor) { res.status(404).json({ error: "Vendor profile not found" }); return; }
+      const v = vendor as Record<string, unknown>;
+      vendorCategory = Array.isArray(v.category_ids) && (v.category_ids as string[]).length > 0
+        ? (v.category_ids as string[])[0] as string
+        : "local_market";
+      vendorGov = (v.governorate as string) || null;
+      vendorCity = (v.city as string) || null;
+    }
 
     const body = req.body as Record<string, unknown>;
-    if (!body.productNameAr || !body.price || !body.unit) {
-      res.status(400).json({ error: "productNameAr, price, unit are required" });
+    if (!body.productNameAr || !body.price) {
+      res.status(400).json({ error: "productNameAr and price are required" });
       return;
     }
 
     const [newPrice] = await db.insert(vendorPricesTable).values({
       vendorSupabaseId: userId,
-      category: (body.category as string) || profile.category,
+      category: (body.category as string) || vendorCategory,
       productName: (body.productName as string) || (body.productNameAr as string),
       productNameAr: body.productNameAr as string,
       price: Number(body.price),
       priceBuy: body.priceBuy ? Number(body.priceBuy) : null,
       priceSell: body.priceSell ? Number(body.priceSell) : null,
-      unit: body.unit as string,
+      unit: (body.unit as string) || "وحدة",
       currency: (body.currency as string) || "SYP",
-      governorate: (body.governorate as string) || profile.governorate || null,
-      city: (body.city as string) || profile.city || null,
+      governorate: (body.governorate as string) || vendorGov || null,
+      city: (body.city as string) || vendorCity || null,
       notes: (body.notes as string) || null,
       quantity: (body.quantity as string) || null,
     }).returning();
@@ -210,6 +230,21 @@ router.delete("/vendor/prices/:id", requireSupabaseAuth, requireVendor, async (r
   }
 });
 
+// ── POST /vendor/prices/:id/view ──────────────────────────────────────────────
+router.post("/vendor/prices/:id/view", async (req, res): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (!id || isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    await db.update(vendorPricesTable)
+      .set({ views: sql`${vendorPricesTable.views} + 1`, updatedAt: new Date() })
+      .where(eq(vendorPricesTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Failed to increment vendor price view");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ── PUT /vendor/profile ───────────────────────────────────────────────────────
 router.put("/vendor/profile", requireSupabaseAuth, requireVendor, async (req, res): Promise<void> => {
   try {
@@ -221,6 +256,7 @@ router.put("/vendor/profile", requireSupabaseAuth, requireVendor, async (req, re
       governorate: string;
       city: string;
       logoUrl: string;
+      description: string;
     }>;
     type VPInsert = typeof vendorProfilesTable.$inferInsert;
     const patch: Partial<VPInsert> = { updatedAt: new Date() };
@@ -230,13 +266,48 @@ router.put("/vendor/profile", requireSupabaseAuth, requireVendor, async (req, re
     if (body.governorate !== undefined) patch.governorate = body.governorate;
     if (body.city !== undefined) patch.city = body.city;
     if (body.logoUrl !== undefined) patch.logoUrl = body.logoUrl;
+    if (body.description !== undefined) patch.description = body.description;
 
     const [updated] = await db.update(vendorProfilesTable)
       .set(patch)
       .where(eq(vendorProfilesTable.supabaseId, userId))
       .returning();
-    if (!updated) { res.status(404).json({ error: "Vendor profile not found" }); return; }
-    res.json(updated);
+
+    if (updated) { res.json(updated); return; }
+
+    // Fallback: admin-created vendors in Supabase vendors table
+    const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (body.businessName !== undefined) updateData.business_name = body.businessName;
+    if (body.phone !== undefined) updateData.phone = body.phone;
+    if (body.address !== undefined) updateData.address = body.address;
+    if (body.governorate !== undefined) updateData.governorate = body.governorate;
+    if (body.city !== undefined) updateData.city = body.city;
+    if (body.logoUrl !== undefined) updateData.logo_url = body.logoUrl;
+    if (body.description !== undefined) updateData.description = body.description;
+
+    const { data: vendorUpdated, error } = await supabaseAdmin!
+      .from("vendors")
+      .update(updateData)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error || !vendorUpdated) {
+      res.status(404).json({ error: "Vendor profile not found" });
+      return;
+    }
+
+    const v = vendorUpdated as Record<string, unknown>;
+    res.json({
+      supabaseId: userId,
+      businessName: v.business_name ?? "",
+      phone: v.phone ?? "",
+      address: v.address ?? "",
+      governorate: v.governorate ?? "",
+      city: v.city ?? "",
+      logoUrl: v.logo_url ?? null,
+      description: v.description ?? "",
+    });
   } catch (err) {
     req.log.error({ err }, "Failed to update vendor profile");
     res.status(500).json({ error: "Internal server error" });

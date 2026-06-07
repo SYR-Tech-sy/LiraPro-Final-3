@@ -95,11 +95,44 @@ function SimpleSelect({ value, onChange, options, placeholder }: {
       <AnimatePresence>
         {open && (
           <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.12 }}
             className="absolute z-[200] top-full mt-1 w-full bg-card border border-border rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
             {options.map(opt => (
               <button key={opt} type="button" onClick={() => { onChange(opt); setOpen(false); }}
                 className={`w-full text-right px-3 py-2 text-sm transition-colors hover:bg-secondary ${value === opt ? 'bg-primary/10 font-bold text-primary' : ''}`}>
                 {opt}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function MetalCategorySelect({ value, onChange }: { value: 'gold' | 'silver'; onChange: (v: 'gold' | 'silver') => void }) {
+  const [open, setOpen] = useState(false);
+  const options: { val: 'gold' | 'silver'; label: string; emoji: string }[] = [
+    { val: 'gold', label: 'الذهب', emoji: '🥇' },
+    { val: 'silver', label: 'الفضة', emoji: '🥈' },
+  ];
+  const current = options.find(o => o.val === value)!;
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="w-full border-2 border-primary/30 rounded-xl px-3 py-2.5 text-sm bg-primary/5 focus:outline-none flex items-center justify-between gap-2 text-right font-bold">
+        <span className="flex items-center gap-2"><span>{current.emoji}</span><span>{current.label}</span></span>
+        <ChevronDown className={`w-4 h-4 text-primary flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.1 }}
+            className="absolute z-[200] top-full mt-1 w-full bg-card border-2 border-primary/20 rounded-xl shadow-xl overflow-hidden">
+            {options.map(opt => (
+              <button key={opt.val} type="button" onClick={() => { onChange(opt.val); setOpen(false); }}
+                className={`w-full text-right px-3 py-3 text-sm transition-colors hover:bg-primary/10 flex items-center gap-2 font-bold ${value === opt.val ? 'bg-primary/10 text-primary' : ''}`}>
+                <span>{opt.emoji}</span><span>{opt.label}</span>
               </button>
             ))}
           </motion.div>
@@ -128,7 +161,12 @@ function PriceFormModal({
 
   const [fromCurrency, setFromCurrency] = useState(editData?.productNameAr?.split(' / ')?.[0] ?? '');
   const [toCurrency, setToCurrency] = useState(editData?.productNameAr?.split(' / ')?.[1] ?? 'ليرة سورية (SYP)');
-  const [goldKarat, setGoldKarat] = useState(editData?.productNameAr?.replace('ذهب عيار ', '') ?? '');
+  const [goldKarat, setGoldKarat] = useState(editData?.productNameAr?.replace('ذهب عيار ', '').replace('فضة عيار ', '') ?? '');
+  const [silverKarat, setSilverKarat] = useState('');
+  const [metalCategory, setMetalCategory] = useState<'gold' | 'silver'>(() => {
+    if (editData?.productNameAr?.startsWith('فضة')) return 'silver';
+    return 'gold';
+  });
   const [fuelType, setFuelType] = useState(isFuel ? (editData?.productNameAr ?? '') : '');
   const [cryptoCoin, setCryptoCoin] = useState(isCrypto ? (editData?.productNameAr ?? '') : '');
 
@@ -156,9 +194,16 @@ function PriceFormModal({
       finalName = `${fromCurrency} / ${toCurrency}`;
       finalUnit = toCurrency.includes('(') ? toCurrency.split('(')[0].trim() : toCurrency;
     } else if (isGold) {
-      if (!goldKarat) { toast.error('اختر العيار'); return; }
-      finalName = `ذهب عيار ${goldKarat}`;
+      if (metalCategory === 'silver') {
+        const karat = silverKarat.trim();
+        if (!karat) { toast.error('أدخل عيار الفضة'); return; }
+        finalName = `فضة عيار ${karat}`;
+      } else {
+        if (!goldKarat) { toast.error('اختر العيار'); return; }
+        finalName = `ذهب عيار ${goldKarat}`;
+      }
       finalUnit = 'غرام';
+      if (!form.priceBuy) { toast.error('سعر الغرام بالدولار مطلوب'); return; }
     } else if (isFuel) {
       if (!fuelType) { toast.error('اختر نوع الوقود'); return; }
       finalName = fuelType;
@@ -185,9 +230,11 @@ function PriceFormModal({
 
   return (
     <motion.div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
       <motion.div className="w-full max-w-md bg-card rounded-t-3xl shadow-2xl max-h-[88vh] flex flex-col"
-        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25 }}>
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 22, stiffness: 380, mass: 0.8 }}>
         <div className="sticky top-0 bg-card px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
           <h3 className="font-black text-sm">{editData ? 'تعديل السعر' : 'إضافة سعر جديد'}</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
@@ -214,15 +261,51 @@ function PriceFormModal({
               </>
             )}
 
-            {/* GOLD */}
+            {/* GOLD / SILVER */}
             {isGold && (
               <>
+                {/* Category selector */}
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-bold text-foreground/70">العيار *</label>
-                  <SimpleSelect value={goldKarat} onChange={setGoldKarat} options={GOLD_KARATS} placeholder="اختر العيار" />
+                  <label className="text-xs font-bold text-foreground/70">اختيار الفئة *</label>
+                  <MetalCategorySelect value={metalCategory} onChange={setMetalCategory} />
                 </div>
-                {inp('سعر الغرام *', 'price', '0', 'number', true)}
-                {inp('سعر الشراء (اختياري)', 'priceBuy', '0', 'number')}
+
+                {metalCategory === 'gold' ? (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-bold text-foreground/70">العيار *</label>
+                      <SimpleSelect value={goldKarat} onChange={setGoldKarat} options={GOLD_KARATS} placeholder="اختر العيار" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-bold text-foreground/70">العيار *</label>
+                      <input
+                        type="text"
+                        value={silverKarat}
+                        onChange={e => setSilverKarat(e.target.value)}
+                        placeholder="مثال: 925"
+                        className="border border-border rounded-xl px-3 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* SYP price */}
+                {inp('سعر الغرام ليرة سورية *', 'price', '0', 'number', true)}
+                {/* USD price — required */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-bold text-foreground/70">سعر الغرام بدولار *</label>
+                  <input
+                    type="number"
+                    value={form.priceBuy}
+                    onChange={set('priceBuy')}
+                    placeholder="0.00"
+                    step="0.001"
+                    className="border border-border rounded-xl px-3 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
                 {inp('ملاحظات', 'notes', 'معلومات إضافية...')}
               </>
             )}
@@ -271,7 +354,7 @@ function PriceFormModal({
               </>
             )}
 
-            {/* GENERIC GOODS (vegetables/food/meat/agriculture/feed/local_market) */}
+            {/* GENERIC GOODS */}
             {isGenericGoods && (
               <>
                 {inp('اسم المنتج *', 'productNameAr', 'مثال: طماطم، برتقال...', 'text', true)}
@@ -305,7 +388,7 @@ function PriceFormModal({
               </>
             )}
 
-            {/* FALLBACK: show generic fields for any unknown category */}
+            {/* FALLBACK */}
             {!isCurrency && !isGold && !isFuel && !isCrypto && !isConstruction && !isGenericGoods && !isTransport && !isElectronics && (
               <>
                 {inp('اسم المنتج / الخدمة *', 'productNameAr', 'مثال: منتج أو خدمة', 'text', true)}
@@ -337,6 +420,7 @@ export default function VendorDashboard() {
   const [showForm, setShowForm] = useState(false);
   const [editPrice, setEditPrice] = useState<VendorPrice | null>(null);
   const [activeTab, setActiveTab] = useState<'prices' | 'stats'>('prices');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const authFetch = useCallback(async (url: string, opts?: RequestInit) => {
     const token = await getToken();
@@ -367,6 +451,12 @@ export default function VendorDashboard() {
   const prices   = dashData?.prices   ?? [];
   const notVendor = dashData?.notVendor ?? false;
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await loadAll();
+    setIsRefreshing(false);
+  };
+
   const handleSavePrice = async (data: Record<string, string>) => {
     try {
       const body = {
@@ -387,15 +477,18 @@ export default function VendorDashboard() {
         toast.success(editPrice ? 'تم تحديث السعر' : 'تمت إضافة السعر');
         setShowForm(false);
         setEditPrice(null);
-        loadAll();
-      } else toast.error('فشل الحفظ');
+        await loadAll();
+      } else {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(err.error ?? 'فشل الحفظ');
+      }
     } catch { toast.error('خطأ في الاتصال'); }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm('هل أنت متأكد من حذف هذا السعر؟')) return;
     const res = await authFetch(`/api/vendor/prices/${id}`, { method: 'DELETE' });
-    if (res.ok) { toast.success('تم الحذف'); loadAll(); }
+    if (res.ok) { toast.success('تم الحذف'); void loadAll(); }
     else toast.error('فشل الحذف');
   };
 
@@ -438,8 +531,13 @@ export default function VendorDashboard() {
             <span className="font-black text-sm">{profile?.businessName ?? 'لوحة التاجر'}</span>
           </div>
         </div>
-        <button onClick={() => void loadAll()} className="p-2 hover:bg-secondary rounded-xl transition-colors">
-          <RefreshCw className="w-4 h-4 text-muted-foreground" />
+        <button
+          onClick={() => void handleRefresh()}
+          disabled={isRefreshing}
+          className="p-2 hover:bg-secondary rounded-xl transition-colors disabled:opacity-60"
+          title="تحديث البيانات"
+        >
+          <RefreshCw className={`w-4 h-4 text-muted-foreground transition-transform ${isRefreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
@@ -464,7 +562,7 @@ export default function VendorDashboard() {
           ))}
         </div>
 
-        {/* Business profile card → navigates to profile page */}
+        {/* Business profile card */}
         <Card className="border-none shadow-sm cursor-pointer active:scale-[0.99] transition-transform" onClick={() => navigate('/app/vendor/profile')}>
           <CardContent className="p-4 flex flex-col gap-2">
             <div className="flex items-center justify-between mb-1">
@@ -543,11 +641,18 @@ export default function VendorDashboard() {
                               </button>
                             </div>
                           </div>
-                          <div className="flex items-end gap-2">
-                            <span className="text-2xl font-black text-primary">{formatNum(p.price, { decimals: 0 })}</span>
-                            <span className="text-xs text-muted-foreground mb-1">{p.currency} / {p.unit}</span>
+                          <div className="flex items-end gap-2 flex-wrap">
+                            <div>
+                              <span className="text-2xl font-black text-primary">{formatNum(p.price, { decimals: 0 })}</span>
+                              <span className="text-xs text-muted-foreground mr-1">{p.currency} / {p.unit}</span>
+                            </div>
+                            {p.priceBuy && (p.productNameAr.includes('ذهب') || p.productNameAr.includes('فضة')) && (
+                              <span className="text-sm font-bold text-green-600 dark:text-green-400">
+                                ${formatNum(p.priceBuy, { decimals: 3 })} / غ
+                              </span>
+                            )}
                           </div>
-                          {(p.priceBuy || p.priceSell) && (
+                          {(p.priceBuy || p.priceSell) && !(p.productNameAr.includes('ذهب') || p.productNameAr.includes('فضة')) && (
                             <div className="flex gap-2">
                               {p.priceBuy && <span className="text-xs bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-lg">شراء: {formatNum(p.priceBuy, { decimals: 0 })}</span>}
                               {p.priceSell && <span className="text-xs bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-lg">بيع: {formatNum(p.priceSell, { decimals: 0 })}</span>}
@@ -620,8 +725,8 @@ export default function VendorDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Unused imports to avoid lint errors */}
-      <span className="hidden"><TrendingUp className="w-0 h-0" /><Building2 className="w-0 h-0" /></span>
+      {/* Hidden to keep imports */}
+      <span className="hidden"><TrendingUp className="w-0 h-0" /></span>
     </div>
   );
 }

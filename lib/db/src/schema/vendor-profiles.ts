@@ -55,6 +55,7 @@ export const vendorProfilesTable = pgTable("vendor_profiles", {
   city: text("city").notNull(),
   address: text("address").notNull(),
   logoUrl: text("logo_url"),
+  description: text("description"),
   category: text("category").notNull().$type<VendorCategory>(),
   trustScore: real("trust_score").notNull().default(50),
   isActive: boolean("is_active").notNull().default(true),

@@ -59,19 +59,12 @@ export default function BusinessProfilePage() {
 
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [editData, setEditData] = useState({ businessName: '', phone: '', address: '', description: '', governorate: '', city: '', logoUrl: '' });
   const logoInputRef = React.useRef<HTMLInputElement>(null);
 
   const GOVERNORATES = ['إدلب','دمشق','ريف دمشق','حلب','حمص','حماة','اللاذقية','طرطوس','دير الزور','الرقة','الحسكة','درعا','السويداء','القنيطرة'];
   const [govOpen, setGovOpen] = useState(false);
-
-  const [lphId] = React.useState<string>(() => {
-    const stored = localStorage.getItem('lph-id');
-    if (stored) return stored;
-    const id = 'LPH-' + Math.random().toString(36).substring(2, 7).toUpperCase();
-    localStorage.setItem('lph-id', id);
-    return id;
-  });
 
   const { data: vendorData, isLoading: loading, refetch: loadData } = useQuery({
     queryKey: ['vendor-profile'],
@@ -94,7 +87,6 @@ export default function BusinessProfilePage() {
   const stats    = vendorData?.stats    ?? null;
   const notVendor = vendorData?.notVendor ?? false;
 
-  // Sync editData when profile first loads (adjust-state-during-render pattern)
   const [prevEditProfile, setPrevEditProfile] = useState<VendorProfile | null>(null);
   if (profile !== prevEditProfile) {
     setPrevEditProfile(profile);
@@ -102,6 +94,40 @@ export default function BusinessProfilePage() {
       setEditData({ businessName: profile.businessName || '', phone: profile.phone || '', address: profile.address || '', description: profile.description || '', governorate: profile.governorate || '', city: profile.city || '', logoUrl: profile.logoUrl || '' });
     }
   }
+
+  const handleLogoUpload = async (file: File) => {
+    setUploadingLogo(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async ev => {
+        const dataUrl = ev.target?.result as string;
+        try {
+          const token = await getToken();
+          const res = await fetch('/api/profile/avatar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ dataUrl }),
+          });
+          if (res.ok) {
+            const { url } = await res.json() as { url: string };
+            setEditData(d => ({ ...d, logoUrl: url }));
+            setEditing(true);
+            toast.success('تم رفع الصورة');
+          } else {
+            const err = await res.json().catch(() => ({})) as { error?: string };
+            toast.error(err.error ?? 'فشل رفع الصورة');
+          }
+        } catch {
+          toast.error('خطأ في رفع الصورة');
+        }
+        setUploadingLogo(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      toast.error('خطأ في قراءة الصورة');
+      setUploadingLogo(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -116,7 +142,10 @@ export default function BusinessProfilePage() {
         toast.success('تم تحديث الملف الشخصي');
         setEditing(false);
         void loadData();
-      } else toast.error('فشل الحفظ');
+      } else {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast.error(err.error ?? 'فشل الحفظ');
+      }
     } catch { toast.error('خطأ في الاتصال'); }
     setSaving(false);
   };
@@ -163,10 +192,11 @@ export default function BusinessProfilePage() {
               )}
               <button
                 onClick={() => logoInputRef.current?.click()}
-                className="absolute -bottom-1 -left-1 w-7 h-7 rounded-full bg-white dark:bg-card flex items-center justify-center shadow-md border border-border hover:bg-secondary transition-colors"
+                disabled={uploadingLogo}
+                className="absolute -bottom-1 -left-1 w-7 h-7 rounded-full bg-white dark:bg-card flex items-center justify-center shadow-md border border-border hover:bg-secondary transition-colors disabled:opacity-60"
                 title="تغيير الشعار"
               >
-                <Camera className="w-3.5 h-3.5 text-foreground/70" />
+                {uploadingLogo ? <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" /> : <Camera className="w-3.5 h-3.5 text-foreground/70" />}
               </button>
               <input
                 ref={logoInputRef}
@@ -176,13 +206,7 @@ export default function BusinessProfilePage() {
                 onChange={e => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = ev => {
-                    const result = ev.target?.result as string;
-                    setEditData(d => ({ ...d, logoUrl: result }));
-                    setEditing(true);
-                  };
-                  reader.readAsDataURL(file);
+                  void handleLogoUpload(file);
                   e.target.value = '';
                 }}
               />
@@ -198,10 +222,6 @@ export default function BusinessProfilePage() {
               <p className="text-xs text-muted-foreground mt-0.5">
                 {CATEGORIES[profile?.category ?? ''] ?? profile?.category}
               </p>
-            </div>
-            <div className="text-left">
-              <p className="text-[10px] text-muted-foreground">معرف LPH</p>
-              <p className="text-xs font-black text-primary" dir="ltr">{lphId}</p>
             </div>
           </div>
 

@@ -88,12 +88,12 @@ export const GoldenBadge = React.memo(function GoldenBadge({ size = 20, showGlow
       style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: size, height: size, cursor: 'default' }}
       animate={showGlow ? {
         filter: [
-          'drop-shadow(0 0 3px #FFD700cc) drop-shadow(0 0 6px #C8960088)',
-          'drop-shadow(0 0 6px #FFD700ff) drop-shadow(0 0 12px #C89600cc) drop-shadow(0 0 20px #FFD70055)',
-          'drop-shadow(0 0 3px #FFD700cc) drop-shadow(0 0 6px #C8960088)',
+          'drop-shadow(0 0 1.5px #FFD700dd) drop-shadow(0 0 3px #C8960077)',
+          'drop-shadow(0 0 3px #FFD700ff) drop-shadow(0 0 6px #C89600bb)',
+          'drop-shadow(0 0 1.5px #FFD700dd) drop-shadow(0 0 3px #C8960077)',
         ],
       } : { filter: 'none' }}
-      whileHover={{ scale: 1.12, filter: 'brightness(1.12) drop-shadow(0 0 8px #FFD700ff) drop-shadow(0 0 16px #C89600cc)' }}
+      whileHover={{ scale: 1.12, filter: 'brightness(1.12) drop-shadow(0 0 4px #FFD700ff) drop-shadow(0 0 8px #C89600cc)' }}
       whileTap={{ scale: 0.95 }}
       transition={showGlow
         ? { filter: { duration: 1.5, repeat: Infinity, ease: 'easeInOut' }, scale: { type: 'spring', stiffness: 280, damping: 18 } }
@@ -125,7 +125,7 @@ export const GoldenBadge = React.memo(function GoldenBadge({ size = 20, showGlow
             <feMerge><feMergeNode in="glow" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <filter id={`og${uid}`} x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="5" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" />
           </filter>
           <clipPath id={`gclip${uid}`}><circle cx={cx} cy={cy} r={44} /></clipPath>
           <filter id={`ck${uid}`} x="-40%" y="-40%" width="180%" height="180%">
@@ -610,8 +610,8 @@ export const ChatBadge = React.memo(function ChatBadge({
     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'visible' }}>
       <style>{`
         @keyframes cbglow-${animKey}{
-          0%,100%{filter:drop-shadow(0 0 2px ${glow1a}) drop-shadow(0 0 4px ${glow1b})}
-          50%{filter:drop-shadow(0 0 3px ${glow2a}) drop-shadow(0 0 6px ${glow2b})}
+          0%,100%{filter:drop-shadow(0 0 1px ${glow1a}) drop-shadow(0 0 2px ${glow1b})}
+          50%{filter:drop-shadow(0 0 1.5px ${glow2a}) drop-shadow(0 0 3px ${glow2b})}
         }
       `}</style>
       <span style={{ display:'inline-flex', overflow:'visible', animation:`cbglow-${animKey} 2.0s ease-in-out infinite` }}>

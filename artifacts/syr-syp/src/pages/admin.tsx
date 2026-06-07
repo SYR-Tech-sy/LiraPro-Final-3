@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { useGetExchangeRates, useGetGoldPrices } from '@workspace/api-client-react';
 import { AdminBadge, RainbowBadge, GoldenBadge, BlueBadge, ChatBadge } from '@/components/golden-badge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1380,7 +1381,8 @@ export default function AdminPage() {
   // Vendor management state (React Query)
   const { data: vendors = [] } = useQuery({ queryKey: ['admin-vendors', token], queryFn: () => adminFetchVendors(token!), enabled: !!token });
   const { data: vendorApplications = [] } = useQuery({ queryKey: ['admin-vendor-apps', token], queryFn: () => adminFetchVendorApplications(token!), enabled: !!token });
-  const { data: adminMessages = [], isFetching: messagesLoading } = useQuery({ queryKey: ['admin-messages', token], queryFn: () => adminFetchAdminMessages(token!), enabled: !!token });
+  // adminFetchAdminMessages kept for future use; messages now stored in localStorage via localSentMsgs
+  void adminFetchAdminMessages;
   const { data: verifyRequests = [] } = useQuery({ queryKey: ['admin-verify-reqs', token], queryFn: () => adminFetchVerifyRequests(token!), enabled: !!token });
   const [vendorAppFilter, setVendorAppFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [createVendorOpen, setCreateVendorOpen] = useState(false);
@@ -1533,6 +1535,18 @@ export default function AdminPage() {
   const [msgSending, setMsgSending] = useState(false);
   const [msgSent, setMsgSent] = useState('');
 
+  // Local sent messages (stored in localStorage since no backend endpoint)
+  const [localSentMsgs, setLocalSentMsgs] = useState<AdminMessage[]>(() => {
+    try { return JSON.parse(localStorage.getItem('admin-sent-msgs') || '[]') as AdminMessage[]; } catch { return []; }
+  });
+  const deleteSentMsg = (id: number) => {
+    setLocalSentMsgs(prev => {
+      const next = prev.filter(m => m.id !== id);
+      try { localStorage.setItem('admin-sent-msgs', JSON.stringify(next)); } catch { /**/ }
+      return next;
+    });
+  };
+
   // Action notification modal (shared for ban / delete / restrict / requests)
   interface ActionNotifState {
     visible: boolean; walletId?: string; targetName?: string;
@@ -1675,9 +1689,22 @@ export default function AdminPage() {
         }),
       });
       if (res.ok) {
+        const newMsg: AdminMessage = {
+          id: Date.now(),
+          user_id: walletId as string,
+          title: msgTitle,
+          body: msgBody,
+          type: 'admin_message',
+          read: false,
+          created_at: new Date().toISOString(),
+        };
+        setLocalSentMsgs(prev => {
+          const next = [newMsg, ...prev].slice(0, 100);
+          try { localStorage.setItem('admin-sent-msgs', JSON.stringify(next)); } catch { /**/ }
+          return next;
+        });
         setMsgTitle(''); setMsgBody(''); setMsgSelectedUser(null); setMsgUserSearch('');
         setMsgSent('تم إرسال الرسالة بنجاح ✓');
-        await queryClient.invalidateQueries({ queryKey: ['admin-messages', token] });
         setTimeout(() => setMsgSent(''), 4000);
       } else {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -2160,9 +2187,9 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 'X-Admin-Token': token ?? '' },
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        console.error('Unban failed:', err.error ?? res.statusText);
+      const data = await res.json().catch(() => ({})) as { success?: boolean; error?: string };
+      if (!res.ok || data.success === false) {
+        toast.error(data.error ?? 'فشل رفع الحظر: المستخدم غير موجود في قاعدة البيانات');
         return;
       }
       queryClient.setQueryData<RegisteredUser[]>(['admin-users', token], prev => prev?.map(u2 => u2.walletId === walletId ? { ...u2, banned: false, banReason: '' } : u2) ?? []);
@@ -2175,7 +2202,7 @@ export default function AdminPage() {
         type: 'success', sender: (badgeAssignedSender || 'LiraPro') as 'LiraPro' | 'فريق LiraPro',
         sending: false, msg: '',
       });
-    } catch {}
+    } catch { toast.error('خطأ في الاتصال'); }
   };
 
   const handleRestrictUser = async (walletId: string) => {
@@ -6637,31 +6664,38 @@ export default function AdminPage() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <Inbox className="w-4 h-4 text-primary" />
-                      الرسائل المُرسلة ({adminMessages.length})
+                      الرسائل المُرسلة ({localSentMsgs.length})
                     </CardTitle>
-                    <Button variant="ghost" size="sm" onClick={() => void queryClient.invalidateQueries({ queryKey: ['admin-messages', token] })} disabled={messagesLoading} className="h-7 w-7 p-0">
-                      {messagesLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                    </Button>
+                    {localSentMsgs.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        if (confirm('هل تريد حذف كل سجل الرسائل؟')) {
+                          setLocalSentMsgs([]);
+                          try { localStorage.removeItem('admin-sent-msgs'); } catch { /**/ }
+                        }
+                      }} className="h-7 px-2 text-xs text-destructive hover:text-destructive">
+                        <Trash2 className="w-3 h-3 ml-1" /> حذف الكل
+                      </Button>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                  {messagesLoading ? (
-                    <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-                  ) : adminMessages.length === 0 ? (
+                  {localSentMsgs.length === 0 ? (
                     <p className="text-center text-sm text-muted-foreground py-8">لم يتم إرسال أي رسائل بعد</p>
                   ) : (
                     <div className="divide-y divide-border max-h-96 overflow-y-auto">
-                      {adminMessages.map(m => (
+                      {localSentMsgs.map(m => (
                         <div key={m.id} className="px-4 py-3 flex items-start gap-3 text-sm">
                           <MessageSquare className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-foreground truncate">{m.title}</p>
                             <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{m.body}</p>
-                            <p className="text-xs text-muted-foreground/50 mt-1">{new Date(m.created_at).toLocaleDateString('ar-SY')}</p>
+                            <p className="text-xs text-muted-foreground/50 mt-1">{new Date(m.created_at).toLocaleDateString('ar-SY', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                           </div>
-                          {m.read
-                            ? <CheckCheck className="w-3.5 h-3.5 text-green-500 mt-0.5 shrink-0" />
-                            : <Clock className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 shrink-0" />}
+                          <button onClick={() => deleteSentMsg(m.id)}
+                            className="p-1 hover:bg-destructive/10 rounded-lg transition-colors shrink-0 mt-0.5"
+                            title="حذف الرسالة">
+                            <Trash2 className="w-3.5 h-3.5 text-destructive/60 hover:text-destructive" />
+                          </button>
                         </div>
                       ))}
                     </div>
