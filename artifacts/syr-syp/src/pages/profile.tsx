@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useGetProfile, useUpdateProfile } from "@workspace/api-client-react";
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUser, useAuth } from '@/context/auth-context';
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -199,9 +200,17 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ─── Sessions & Devices state ───────────────────────────────────────────────
-  const [sessions, setSessions] = useState<StoredSession[]>([]);
+  const queryClient = useQueryClient();
+  const { data: sessions = [] } = useQuery({
+    queryKey: ['sessions', user?.id],
+    queryFn: () => user?.id ? ensureCurrentSession(user.id) : [],
+    enabled: !!user?.id,
+    staleTime: 0,
+  });
   const [showSessions, setShowSessions] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [qrToken, setQrToken] = useState('');
+  const qrData = qrToken ? encodeURIComponent(qrToken) : '';
   const [scanning, setScanning] = useState(false);
   const [scanMsg, setScanMsg] = useState('');
   const [qrConfirmData, setQrConfirmData] = useState<{ scannedId: string } | null>(null);
@@ -210,26 +219,13 @@ export default function ProfilePage() {
   const scanCanvasRef = useRef<HTMLCanvasElement>(null);
   const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const qrData = useMemo(() => {
-    if (!user?.id) return '';
-    // eslint-disable-next-line react-hooks/purity
-    const token = `lph-qrlogin:${user.id}:${Date.now()}`;
-    return encodeURIComponent(token);
-  }, [user?.id]);
-
-  // Derived-state-in-render: re-initialize sessions when the signed-in user changes.
-  const prevSessionsUserIdRef = useRef<string | undefined>(user?.id);
-  if (prevSessionsUserIdRef.current !== user?.id) {
-    prevSessionsUserIdRef.current = user?.id;
-    setSessions(user?.id ? ensureCurrentSession(user.id) : []);
-  }
-
   const removeSession = useCallback((sessionId: string) => {
     if (!user?.id) return;
     const updated = getSessions(user.id).filter(s => s.id !== sessionId);
     saveSessions(user.id, updated);
-    setSessions(updated.map(s => s.id === 'sess-current-' + user.id ? { ...s, isCurrent: true } : s));
-  }, [user?.id]);
+    queryClient.setQueryData<StoredSession[]>(['sessions', user.id],
+      updated.map(s => s.id === 'sess-current-' + user.id ? { ...s, isCurrent: true } : s));
+  }, [user?.id, queryClient]);
 
   const stopScanner = useCallback(() => {
     if (scanIntervalRef.current) { clearInterval(scanIntervalRef.current); scanIntervalRef.current = null; }
@@ -824,7 +820,10 @@ export default function ProfilePage() {
                 {/* QR Login */}
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setShowQr(v => !v)}
+                    onClick={() => {
+                      if (user?.id && !showQr) setQrToken(`lph-qrlogin:${user.id}:${Date.now()}`);
+                      setShowQr(v => !v);
+                    }}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all ${showQr ? 'bg-primary text-white' : 'bg-secondary text-foreground'}`}
                   >
                     <QrCode className="w-4 h-4" />
@@ -921,7 +920,7 @@ export default function ProfilePage() {
                                 };
                                 const existing = getSessions(user.id);
                                 saveSessions(user.id, [newSess, ...existing]);
-                                setSessions(ensureCurrentSession(user.id));
+                                void queryClient.invalidateQueries({ queryKey: ['sessions', user.id] });
                               }
                               setQrConfirmData(null);
                               setScanMsg('✅ تم تسجيل الجهاز بنجاح');

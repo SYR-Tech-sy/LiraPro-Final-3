@@ -1,6 +1,6 @@
-import React, { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Switch, Route, useLocation, Router as WouterRouter, Redirect, Link } from 'wouter';
-import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
+import { QueryClientProvider, QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Moon, Sun, Menu, User, ArrowLeftRight, Home as HomeIcon, Gem, Coins, Settings, Shield, Info, LogOut, BarChart2, Bell, Wallet, Bitcoin, RefreshCw, CreditCard, Building2, Landmark, Store, ShieldX, Clock, Trash2, HelpCircle, MessageSquare } from 'lucide-react';
@@ -18,7 +18,6 @@ import { GuestModal } from '@/components/guest-modal';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { AnimatedLogo } from '@/components/animated-logo';
 import { OfflineBar } from '@/components/offline-bar';
-import { useDataEffect } from '@/hooks/use-data-effect';
 import { FloatingAiButton } from '@/components/floating-ai-button';
 import { saveQueryToCache, loadCachedQueries } from '@/lib/offline-cache';
 
@@ -143,24 +142,18 @@ function GreetingBar() {
   const { user, isSignedIn, getToken } = useUser();
   const ar = language === 'ar';
   const h = new Date().getHours();
-  const [profileFirstName, setProfileFirstName] = useState('');
-
-  useDataEffect(() => {
-    if (!isSignedIn) { setProfileFirstName(''); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const tok = await getToken();
-        if (!tok || cancelled) return;
-        const res = await fetch('/api/v2/profile', { headers: { Authorization: `Bearer ${tok}` } });
-        if (!cancelled && res.ok) {
-          const d = await res.json() as { firstName?: string; lastName?: string };
-          setProfileFirstName(d.firstName || '');
-        }
-      } catch { /* silent */ }
-    })();
-    return () => { cancelled = true; };
-  }, [isSignedIn, getToken]);
+  const { data: profileData } = useQuery({
+    queryKey: ['greeting-profile', user?.id],
+    queryFn: async () => {
+      const tok = await getToken();
+      if (!tok) return null;
+      const res = await fetch('/api/v2/profile', { headers: { Authorization: `Bearer ${tok}` } });
+      if (!res.ok) return null;
+      return res.json() as Promise<{ firstName?: string }>;
+    },
+    enabled: !!isSignedIn,
+  });
+  const profileFirstName = profileData?.firstName ?? '';
 
   const greeting = (() => {
     if (ar) {
@@ -211,85 +204,68 @@ function GreetingBar() {
 function useVendorInfo() {
   const { getToken } = useAuth();
   const { isSignedIn } = useUser();
-  const [isVendor, setIsVendor] = useState(() => !!localStorage.getItem('syp-vendor-biz'));
-  const [businessName, setBusinessName] = useState(() => localStorage.getItem('syp-vendor-biz') ?? '');
+  const queryClient = useQueryClient();
 
-  const checkVendorStatus = useCallback(async (token: string | null) => {
-    if (!token) return;
-    try {
-      const res = await fetch('/api/vendor/profile', {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json() as { businessName: string };
-        setIsVendor(true);
-        setBusinessName(data.businessName ?? '');
-        localStorage.setItem('syp-vendor-biz', data.businessName ?? '');
-      } else if (res.status === 404) {
-        // Try to recover via email-based linking (vendor approved by admin but not yet linked)
-        try {
-          const linkRes = await fetch('/api/vendor/link-by-email', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            credentials: 'include',
-          });
-          if (linkRes.ok) {
-            const linked = await linkRes.json() as { businessName?: string };
-            setIsVendor(true);
-            const biz = linked.businessName ?? '';
-            setBusinessName(biz);
-            localStorage.setItem('syp-vendor-biz', biz);
-            return;
-          }
-        } catch { /* link failed — fall through to not-vendor */ }
-        setIsVendor(false);
-        setBusinessName('');
-        localStorage.removeItem('syp-vendor-biz');
-      } else {
-        setIsVendor(false);
-        setBusinessName('');
-        localStorage.removeItem('syp-vendor-biz');
-      }
-    } catch { /* keep cached */ }
-  }, []);
-
-  useDataEffect(() => {
-    if (!isSignedIn) {
-      setIsVendor(false);
-      setBusinessName('');
-      localStorage.removeItem('syp-vendor-biz');
-      return;
-    }
-    let stopped = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    (async () => {
+  const { data: vendorData } = useQuery({
+    queryKey: ['vendor-status', isSignedIn],
+    queryFn: async () => {
       const token = await getToken();
-      if (stopped) return;
-      await checkVendorStatus(token);
+      if (!token) {
+        localStorage.removeItem('syp-vendor-biz');
+        return { isVendor: false, businessName: '' };
+      }
+      try {
+        const res = await fetch('/api/vendor/profile', {
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json() as { businessName: string };
+          const biz = data.businessName ?? '';
+          localStorage.setItem('syp-vendor-biz', biz);
+          return { isVendor: true, businessName: biz };
+        } else if (res.status === 404) {
+          // Try to recover via email-based linking
+          try {
+            const linkRes = await fetch('/api/vendor/link-by-email', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              credentials: 'include',
+            });
+            if (linkRes.ok) {
+              const linked = await linkRes.json() as { businessName?: string };
+              const biz = linked.businessName ?? '';
+              localStorage.setItem('syp-vendor-biz', biz);
+              return { isVendor: true, businessName: biz };
+            }
+          } catch { /* link failed */ }
+          localStorage.removeItem('syp-vendor-biz');
+          return { isVendor: false, businessName: '' };
+        } else {
+          localStorage.removeItem('syp-vendor-biz');
+          return { isVendor: false, businessName: '' };
+        }
+      } catch {
+        const cached = localStorage.getItem('syp-vendor-biz');
+        return cached != null ? { isVendor: true, businessName: cached } : { isVendor: false, businessName: '' };
+      }
+    },
+    enabled: !!isSignedIn,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev: { isVendor: boolean; businessName: string } | undefined) => prev,
+  });
 
-      intervalId = setInterval(async () => {
-        if (stopped) return;
-        const t = await getToken();
-        await checkVendorStatus(t);
-      }, 30_000);
-    })();
-
-    const onFocus = async () => {
-      const t = await getToken();
-      await checkVendorStatus(t);
+  useEffect(() => {
+    const onApproved = () => {
+      void queryClient.invalidateQueries({ queryKey: ['vendor-status'] });
     };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('syp-vendor-approved', onFocus as EventListener);
+    document.addEventListener('syp-vendor-approved', onApproved);
+    return () => document.removeEventListener('syp-vendor-approved', onApproved);
+  }, [queryClient]);
 
-    return () => {
-      stopped = true;
-      if (intervalId) clearInterval(intervalId);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('syp-vendor-approved', onFocus as EventListener);
-    };
-  }, [isSignedIn, getToken, checkVendorStatus]);
+  const isVendor = isSignedIn ? (vendorData?.isVendor ?? !!localStorage.getItem('syp-vendor-biz')) : false;
+  const businessName = isSignedIn ? (vendorData?.businessName ?? localStorage.getItem('syp-vendor-biz') ?? '') : '';
 
   return { isVendor, businessName };
 }
@@ -1075,11 +1051,12 @@ function BanGuard({ children }: { children: React.ReactNode }) {
     signedOutRef.current = false;
   }, []);
 
-  useDataEffect(() => {
+  useEffect(() => {
     if (status?.restricted && status.restrictedUntil && new Date(status.restrictedUntil) <= new Date()) {
-      clearBlockedStatus();
+      localStorage.removeItem(BAN_STORAGE_KEY);
+      signedOutRef.current = false;
     }
-  }, [status?.restricted, status?.restrictedUntil, clearBlockedStatus]);
+  }, [status?.restricted, status?.restrictedUntil]);
 
   // Only block rendering if we have a confirmed bad status from cache
   // This prevents a blank spinner on every page load for normal users

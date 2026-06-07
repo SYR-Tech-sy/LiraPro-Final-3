@@ -19,8 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useGetExchangeRates, useGetGoldPrices } from '@workspace/api-client-react';
 import { AdminBadge, RainbowBadge, GoldenBadge, BlueBadge, ChatBadge } from '@/components/golden-badge';
-import { usePollingCallback } from '@/hooks/use-polling-callback';
-import { useDataEffect } from '@/hooks/use-data-effect';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -410,22 +409,17 @@ async function bulkDeleteAdminTickets(ids: string[]): Promise<void> {
 // ─── Admin Tickets Panel ───────────────────────────────────────────────────────
 
 function AdminTicketsPanel({ onOpenConv }: { onOpenConv?: (userId: string) => void }) {
-  const [tickets, setTickets] = React.useState<SupportTicketAdmin[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  const { data: tickets = [], isFetching: loading, refetch } = useQuery({
+    queryKey: ['admin-tickets'],
+    queryFn: fetchAdminTickets,
+    refetchInterval: 6000,
+  });
+  const refresh = refetch;
   const [selId, setSelId] = React.useState<string | null>(null);
   const [closeNote, setCloseNote] = React.useState('');
   const [filter, setFilter] = React.useState<'all' | 'open' | 'in_progress' | 'closed'>('all');
   const [selectedTicketIds, setSelectedTicketIds] = React.useState<Set<string>>(new Set());
   const [ticketSelectMode, setTicketSelectMode] = React.useState(false);
-
-  const refresh = React.useCallback(async () => {
-    setLoading(true);
-    const data = await fetchAdminTickets();
-    setTickets(data);
-    setLoading(false);
-  }, []);
-
-  usePollingCallback(refresh, 6000);
 
   const selTicket = selId ? tickets.find(t => t.id === selId) ?? null : null;
 
@@ -711,7 +705,6 @@ function AgentBadgePill({ agent }: { agent: SupportAgent }) {
 }
 
 function AdminSupportPanel({ initUserId, onImageClick, openConfirm }: { initUserId?: string | null; onImageClick?: (src: string) => void; openConfirm: (opts: { title: string; body: string; confirmLabel?: string; cancelLabel?: string; destructive?: boolean; alertOnly?: boolean; onConfirm?: () => void | Promise<void> }) => void }) {
-  const [convs, setConvs] = React.useState<SupportConvAdmin[]>([]);
   const [selUserId, setSelUserId] = React.useState<string | null>(initUserId ?? null);
   const [replyText, setReplyText] = React.useState('');
   const [agents, setAgents] = React.useState<SupportAgent[]>(getAgents);
@@ -731,9 +724,16 @@ function AdminSupportPanel({ initUserId, onImageClick, openConfirm }: { initUser
   const adminTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomRef = React.useRef<HTMLDivElement>(null);
 
-  const loadConvs = React.useCallback(() => setConvs(getAllConvs()), []);
-
-  usePollingCallback(loadConvs, 3000);
+  const qcConvs = useQueryClient();
+  const { data: convs = [] } = useQuery({
+    queryKey: ['admin-support-convs'],
+    queryFn: getAllConvs,
+    refetchInterval: 3000,
+  });
+  const loadConvs = React.useCallback(
+    () => void qcConvs.invalidateQueries({ queryKey: ['admin-support-convs'] }),
+    [qcConvs],
+  );
 
   React.useEffect(() => {
     if (selUserId) setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -1133,7 +1133,7 @@ function AdminImageLightbox({ src, onClose }: { src: string | null; onClose: () 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
-  const dragging = useRef(false);
+  const [dragging, setDragging] = React.useState(false);
   const dragStart = useRef({ mx: 0, my: 0, px: 0, py: 0 });
   const clamp = (z: number) => Math.min(4, Math.max(1, z));
 
@@ -1149,22 +1149,19 @@ function AdminImageLightbox({ src, onClose }: { src: string | null; onClose: () 
     return () => window.removeEventListener('keydown', onKey);
   }, [src, onClose]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { if (!src) { setZoom(1); setPan({ x: 0, y: 0 }); } }, [src]);
-
   if (!src) return null;
 
   const onWheel = (e: React.WheelEvent) => { e.preventDefault(); setZoom(z => clamp(z - e.deltaY * 0.002)); };
   const onMouseDown = (e: React.MouseEvent) => {
     if (zoom <= 1) return;
-    dragging.current = true;
+    setDragging(true);
     dragStart.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
   };
   const onMouseMove = (e: React.MouseEvent) => {
-    if (!dragging.current) return;
+    if (!dragging) return;
     setPan({ x: dragStart.current.px + e.clientX - dragStart.current.mx, y: dragStart.current.py + e.clientY - dragStart.current.my });
   };
-  const onMouseUp = () => { dragging.current = false; };
+  const onMouseUp = () => { setDragging(false); };
   const onTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1202,8 +1199,7 @@ function AdminImageLightbox({ src, onClose }: { src: string | null; onClose: () 
         {/* Image viewport */}
         <div
           className="overflow-hidden rounded-2xl shadow-2xl"
-          // eslint-disable-next-line react-hooks/refs
-          style={{ maxWidth: '88vw', maxHeight: '78vh', cursor: zoom > 1 ? (dragging.current ? 'grabbing' : 'grab') : 'zoom-in' }}
+          style={{ maxWidth: '88vw', maxHeight: '78vh', cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in' }}
           onWheel={onWheel}
           onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
           onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
@@ -1214,8 +1210,7 @@ function AdminImageLightbox({ src, onClose }: { src: string | null; onClose: () 
             style={{
               maxWidth: '88vw', maxHeight: '78vh',
               transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
-              // eslint-disable-next-line react-hooks/refs
-              transition: dragging.current ? 'none' : 'transform 0.12s ease',
+              transition: dragging ? 'none' : 'transform 0.12s ease',
               userSelect: 'none', WebkitUserSelect: 'none',
             }}
           />
@@ -1231,6 +1226,134 @@ function AdminImageLightbox({ src, onClose }: { src: string | null; onClose: () 
   );
 }
 
+// ─── Shared interfaces (used by module-level fetch functions) ─────────────────
+
+interface VendorProfileAdmin {
+  id: number; supabaseId: string; businessName: string; fullName: string;
+  email: string; phone: string; governorate: string; city: string;
+  address?: string; category: string; trustScore: number; isActive: boolean;
+  logoUrl?: string; createdAt: string;
+}
+interface VendorApplication {
+  id: number; businessName: string; fullName: string; email: string;
+  phone: string; governorate: string; city: string; address: string;
+  category: string; status: 'pending' | 'approved' | 'rejected';
+  adminNotes?: string; createdAt: string;
+}
+interface AdminMessage { id: number; user_id: string; title: string; body: string; type: string; read: boolean; created_at: string; }
+interface BroadcastData { text: string; textColor?: string; speed?: string; countdownSecs?: number; countdownColor?: string; startedAt: string; endsAt?: string; }
+
+// ─── Module-level fetch functions ─────────────────────────────────────────────
+
+async function adminFetchStats(token: string) {
+  const res = await fetch('/api/admin/stats', { headers: { 'X-Admin-Token': token } });
+  if (!res.ok) return null;
+  return res.json() as Promise<AdminStats>;
+}
+async function adminFetchUsers(token: string) {
+  const res = await fetch('/api/admin/users', { headers: { 'X-Admin-Token': token } });
+  if (!res.ok) return [] as RegisteredUser[];
+  return res.json() as Promise<RegisteredUser[]>;
+}
+async function adminFetchDeletionRequests(token: string) {
+  const res = await fetch('/api/admin/deletion-requests', { headers: { 'X-Admin-Token': token } });
+  if (!res.ok) return [] as DeletionRequest[];
+  return res.json() as Promise<DeletionRequest[]>;
+}
+async function adminFetchBuySellOverrides() {
+  const res = await fetch('/api/admin/rate-overrides');
+  if (!res.ok) return {} as Record<string, BuySellOverride>;
+  return res.json() as Promise<Record<string, BuySellOverride>>;
+}
+async function adminFetchNotifications() {
+  const res = await fetch('/api/notifications');
+  if (!res.ok) return [] as SypNotification[];
+  return res.json() as Promise<SypNotification[]>;
+}
+async function adminFetchBroadcast() {
+  const res = await fetch('/api/broadcast');
+  if (!res.ok) return null;
+  return res.json() as Promise<BroadcastData | null>;
+}
+async function adminFetchSypRate() {
+  const res = await fetch('/api/settings/syp-rate');
+  if (!res.ok) return null;
+  return res.json() as Promise<{ rate: number; isManual: boolean; updatedAt: string } | null>;
+}
+async function adminFetchGoldOverride() {
+  const res = await fetch('/api/settings/gold-rate');
+  if (!res.ok) return null;
+  return res.json() as Promise<{ isManual: boolean; override?: { pricePerGramSYP: number; updatedAt: string } } | null>;
+}
+async function adminFetchMetalRates() {
+  const res = await fetch('/api/settings/metal-rates');
+  if (!res.ok) return {} as Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }>;
+  return res.json() as Promise<Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }>>;
+}
+async function adminFetchVendors(token: string): Promise<VendorProfileAdmin[]> {
+  try {
+    const res = await fetch('/api/admin/vendors', { headers: { 'X-Admin-Token': token } });
+    if (!res.ok) return [];
+    const raw = await res.json() as Record<string, unknown>[];
+    return raw.map(v => ({
+      id: v.id as number,
+      supabaseId: (v.user_id ?? v.supabaseId ?? v.id) as string,
+      businessName: (v.business_name ?? v.businessName) as string,
+      fullName: (v.owner_name ?? v.fullName ?? '') as string,
+      email: (v.email ?? (v.profiles as Record<string, unknown> | undefined)?.email ?? '') as string,
+      phone: (v.phone ?? (v.profiles as Record<string, unknown> | undefined)?.phone ?? '') as string,
+      governorate: (v.governorate ?? '') as string,
+      city: (v.city ?? '') as string,
+      address: v.address as string | undefined,
+      category: (Array.isArray(v.category_ids) ? (v.category_ids as string[])[0] : (v.category ?? '')) as string,
+      trustScore: ((v.trust_score ?? v.trustScore ?? 5) as number) * (typeof v.trust_score === 'number' && v.trust_score <= 10 ? 10 : 1),
+      isActive: (v.is_active ?? v.isActive ?? true) as boolean,
+      logoUrl: (v.logo_url ?? v.logoUrl) as string | undefined,
+      createdAt: (v.created_at ?? v.createdAt) as string,
+    }));
+  } catch { return []; }
+}
+async function adminFetchVendorApplications(token: string): Promise<VendorApplication[]> {
+  try {
+    const res = await fetch('/api/admin/vendor-applications', { headers: { 'X-Admin-Token': token } });
+    if (!res.ok) return [];
+    const raw = await res.json() as Record<string, unknown>[];
+    return raw.map(a => ({
+      id: a.id as number,
+      businessName: (a.business_name ?? a.businessName) as string,
+      fullName: (a.owner_name ?? a.fullName ?? '') as string,
+      email: (a.email ?? (a.profiles as Record<string, unknown> | undefined)?.email ?? '') as string,
+      phone: (a.phone ?? '') as string,
+      governorate: (a.governorate ?? '') as string,
+      city: (a.city ?? '') as string,
+      address: (a.address ?? '') as string,
+      category: (a.category ?? '') as string,
+      status: (a.status ?? 'pending') as 'pending' | 'approved' | 'rejected',
+      adminNotes: (a.reject_reason ?? a.adminNotes) as string | undefined,
+      createdAt: (a.created_at ?? a.createdAt) as string,
+    }));
+  } catch { return []; }
+}
+async function adminFetchAdminMessages(token: string) {
+  const res = await fetch('/api/admin/messages', { headers: { 'X-Admin-Token': token } });
+  if (!res.ok) return [] as AdminMessage[];
+  return res.json() as Promise<AdminMessage[]>;
+}
+async function adminFetchVerifyRequests(token: string) {
+  try {
+    const res = await fetch('/api/admin/verify-requests', { headers: { 'X-Admin-Token': token } });
+    if (!res.ok) return [] as VerifyRequest[];
+    const all = await res.json() as VerifyRequest[];
+    return all.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+  } catch { return [] as VerifyRequest[]; }
+}
+async function adminFetchVendorPrices(supabaseId: string, token: string) {
+  const res = await fetch(`/api/admin/vendors/${supabaseId}/prices`, { headers: { 'X-Admin-Token': token } });
+  if (!res.ok) return [];
+  const d = await res.json();
+  return Array.isArray(d) ? d as Array<{id:number;product:string;category:string;price:number|null;priceBuy:number|null;priceSell:number|null;unit:string|null;isActive:boolean;updatedAt:string}> : [];
+}
+
 // ─── Main Admin Page ──────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -1238,18 +1361,15 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [supportInitUserId, setSupportInitUserId] = useState<string | null>(null);
 
-  // AI rating stats (aggregated from localStorage)
-  const [aiRatingStats, setAiRatingStats] = useState<{
-    totalUp: number; totalDown: number;
-    daily: { date: string; up: number; down: number }[];
-  }>({ totalUp: 0, totalDown: 0, daily: [] });
-
-  // Data
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [users, setUsers] = useState<RegisteredUser[]>([]);
-  const [deletionRequests, setDeletionRequests] = useState<DeletionRequest[]>([]);
-  const [buySellOverrides, setBuySellOverrides] = useState<Record<string, BuySellOverride>>({});
-  const [notifications, setNotifications] = useState<SypNotification[]>([]);
+  // Data (React Query)
+  const queryClient = useQueryClient();
+  const { data: stats } = useQuery({ queryKey: ['admin-stats', token], queryFn: () => adminFetchStats(token!), enabled: !!token });
+  const { data: users = [] } = useQuery({ queryKey: ['admin-users', token], queryFn: () => adminFetchUsers(token!), enabled: !!token });
+  const { data: deletionRequests = [] } = useQuery({ queryKey: ['admin-deletion-reqs', token], queryFn: () => adminFetchDeletionRequests(token!), enabled: !!token });
+  const { data: buySellOverrides = {} } = useQuery({ queryKey: ['admin-buy-sell-overrides'], queryFn: adminFetchBuySellOverrides, enabled: !!token });
+  const { data: notifications = [] } = useQuery({ queryKey: ['admin-notifications'], queryFn: adminFetchNotifications, enabled: !!token });
+  const { data: broadcastData } = useQuery({ queryKey: ['admin-broadcast'], queryFn: adminFetchBroadcast, enabled: !!token, refetchInterval: 60_000 });
+  const broadcastActive = broadcastData ?? null;
 
   // Real-time new-events counters (polls /api/admin/new-events every 30s)
   const [newEvents, setNewEvents] = useState({ users: 0, applications: 0 });
@@ -1267,21 +1387,11 @@ export default function AdminPage() {
   const [deletingUser, setDeletingUser] = useState<string | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
 
-  // Vendor management state
-  interface VendorProfileAdmin {
-    id: number; supabaseId: string; businessName: string; fullName: string;
-    email: string; phone: string; governorate: string; city: string;
-    address?: string; category: string; trustScore: number; isActive: boolean;
-    logoUrl?: string; createdAt: string;
-  }
-  interface VendorApplication {
-    id: number; businessName: string; fullName: string; email: string;
-    phone: string; governorate: string; city: string; address: string;
-    category: string; status: 'pending' | 'approved' | 'rejected';
-    adminNotes?: string; createdAt: string;
-  }
-  const [vendors, setVendors] = useState<VendorProfileAdmin[]>([]);
-  const [vendorApplications, setVendorApplications] = useState<VendorApplication[]>([]);
+  // Vendor management state (React Query)
+  const { data: vendors = [] } = useQuery({ queryKey: ['admin-vendors', token], queryFn: () => adminFetchVendors(token!), enabled: !!token });
+  const { data: vendorApplications = [] } = useQuery({ queryKey: ['admin-vendor-apps', token], queryFn: () => adminFetchVendorApplications(token!), enabled: !!token });
+  const { data: adminMessages = [], isFetching: messagesLoading } = useQuery({ queryKey: ['admin-messages', token], queryFn: () => adminFetchAdminMessages(token!), enabled: !!token });
+  const { data: verifyRequests = [] } = useQuery({ queryKey: ['admin-verify-reqs', token], queryFn: () => adminFetchVerifyRequests(token!), enabled: !!token });
   const [vendorAppFilter, setVendorAppFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [createVendorOpen, setCreateVendorOpen] = useState(false);
   const [vendorForm, setVendorForm] = useState({ supabaseId: '', businessName: '', fullName: '', email: '', phone: '', governorate: '', city: '', address: '', category: '', trustScore: '50', logoUrl: '' });
@@ -1295,13 +1405,20 @@ export default function AdminPage() {
   const badgeTeam: 'admin' = 'admin';
   const adminBadgeType = badgeLira; // legacy alias
 
-  // Gold/Metals override state
-  const [goldOverrideInput, setGoldOverrideInput] = useState('');
-  const [goldOverrideActive, setGoldOverrideActive] = useState(false);
+  // Gold/Metals override state (React Query)
+  const [goldOverrideEdit, setGoldOverrideEdit] = useState<string | null>(null);
   const [goldOverrideMsg, setGoldOverrideMsg] = useState('');
-  const [goldOverrideUpdatedAt, setGoldOverrideUpdatedAt] = useState<string | null>(null);
-  const [metalOverrides, setMetalOverrideState] = useState<Record<string, number>>({});
-  const [metalOverridesDetail, setMetalOverridesDetail] = useState<Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }>>({});
+  const { data: goldOverrideData } = useQuery({ queryKey: ['admin-gold-override'], queryFn: adminFetchGoldOverride, enabled: !!token });
+  const goldOverrideActive = goldOverrideData?.isManual ?? false;
+  const goldOverrideInput = goldOverrideEdit ?? goldOverrideData?.override?.pricePerGramSYP.toString() ?? '';
+  const goldOverrideUpdatedAt = goldOverrideData?.override?.updatedAt ?? null;
+  const { data: metalRatesRaw = {} } = useQuery({ queryKey: ['admin-metal-rates'], queryFn: adminFetchMetalRates, enabled: !!token });
+  const metalOverrides = useMemo(() => {
+    const map: Record<string, number> = {};
+    Object.entries(metalRatesRaw).forEach(([sym, v]) => { if (v.isManual) map[sym] = v.priceSYP; });
+    return map;
+  }, [metalRatesRaw]);
+  const metalOverridesDetail = metalRatesRaw;
   const [editMetal, setEditMetal] = useState<string | null>(null);
   const [editMetalVal, setEditMetalVal] = useState('');
   const [metalMsg, setMetalMsg] = useState('');
@@ -1315,11 +1432,13 @@ export default function AdminPage() {
   const [clearHistoryDays, setClearHistoryDays] = useState<'all' | '30' | '90'>('all');
   const [clearHistoryLoading, setClearHistoryLoading] = useState(false);
 
-  // Rates tab state
-  const [sypRateCurrent, setSypRateCurrent] = useState(13500);
-  const [sypRateIsManual, setSypRateIsManual] = useState(false);
-  const [sypRateInput, setSypRateInput] = useState('13500');
-  const [sypRateUpdatedAt, setSypRateUpdatedAt] = useState<string | null>(null);
+  // Rates tab state (React Query)
+  const { data: sypRateData } = useQuery({ queryKey: ['admin-syp-rate'], queryFn: adminFetchSypRate, enabled: !!token });
+  const [sypRateEdit, setSypRateEdit] = useState<string | null>(null);
+  const sypRateCurrent = sypRateData?.rate ?? 13500;
+  const sypRateIsManual = sypRateData?.isManual ?? false;
+  const sypRateInput = sypRateEdit ?? sypRateData?.rate.toString() ?? '13500';
+  const sypRateUpdatedAt = sypRateData?.updatedAt ?? null;
   const [sypRateSaving, setSypRateSaving] = useState(false);
   const [sypRateMsg, setSypRateMsg] = useState('');
   const [editCurrency, setEditCurrency] = useState<string | null>(null);
@@ -1351,8 +1470,12 @@ export default function AdminPage() {
   const [vendorRestrictDays, setVendorRestrictDays] = useState('');
   const [vendorRestrictMsg, setVendorRestrictMsg] = useState('');
   const [adminLightboxSrc, setAdminLightboxSrc] = useState<string | null>(null);
-  const [vendorDetailPrices, setVendorDetailPrices] = useState<Array<{id:number;product:string;category:string;price:number|null;priceBuy:number|null;priceSell:number|null;unit:string|null;isActive:boolean;updatedAt:string}>>([]);
-  const [vendorPricesLoading, setVendorPricesLoading] = useState(false);
+  const { data: vendorDetailPrices = [], isFetching: vendorPricesLoading } = useQuery({
+    queryKey: ['admin-vendor-prices', vendorDetail?.supabaseId, token],
+    queryFn: () => adminFetchVendorPrices(vendorDetail!.supabaseId, token!),
+    enabled: !!vendorDetail?.supabaseId && !!token,
+    staleTime: 0,
+  });
 
   // Legendary glow vendors (localStorage)
   const [legendaryVendors, setLegendaryVendors] = useState<Set<number>>(() => {
@@ -1414,15 +1537,12 @@ export default function AdminPage() {
   const [vendorSearch, setVendorSearch] = useState('');
 
   // Direct messaging state
-  interface AdminMessage { id: number; user_id: string; title: string; body: string; type: string; read: boolean; created_at: string; }
   const [msgUserSearch, setMsgUserSearch] = useState('');
   const [msgSelectedUser, setMsgSelectedUser] = useState<RegisteredUser | null>(null);
   const [msgTitle, setMsgTitle] = useState('');
   const [msgBody, setMsgBody] = useState('');
   const [msgSending, setMsgSending] = useState(false);
   const [msgSent, setMsgSent] = useState('');
-  const [adminMessages, setAdminMessages] = useState<AdminMessage[]>([]);
-  const [messagesLoading, setMessagesLoading] = useState(false);
 
   // Action notification modal (shared for ban / delete / restrict / requests)
   interface ActionNotifState {
@@ -1453,13 +1573,10 @@ export default function AdminPage() {
     try { localStorage.setItem('admin-badge-sender', name); } catch { /**/ }
   };
 
-  // Verification requests state
-  const [verifyRequests, setVerifyRequests] = useState<VerifyRequest[]>([]);
+  // Verification requests state (via useQuery above)
   const [verifySubTab, setVerifySubTab] = useState<'deletion' | 'verification'>('deletion');
 
-  // User LPH / verify maps
-  const [userLphIds, setUserLphIds] = useState<Record<string, string>>({});
-  const [userVerifyStatus, setUserVerifyStatus] = useState<Record<string, string>>({});
+  // User LPH / verify maps (derived via useMemo — see below)
 
   // Accept application panel
   const [acceptingApp, setAcceptingApp] = useState<VendorApplication | null>(null);
@@ -1479,9 +1596,17 @@ export default function AdminPage() {
   const [rejectSaving, setRejectSaving] = useState(false);
   const [rejectMsg, setRejectMsg] = useState('');
 
-  // Karat gold overrides (stored as GOLD_18, GOLD_21, etc.)
-  const [karatOverrides, setKaratOverrides] = useState<Record<string, number>>({});
-  const [karatOverridesDetail, setKaratOverridesDetail] = useState<Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }>>({});
+  // Karat gold overrides (derived from metalRatesRaw)
+  const karatOverrides = useMemo(() => {
+    const map: Record<string, number> = {};
+    Object.entries(metalRatesRaw).forEach(([sym, v]) => { if (sym.startsWith('GOLD_') && v.isManual) map[sym] = v.priceSYP; });
+    return map;
+  }, [metalRatesRaw]);
+  const karatOverridesDetail = useMemo(() => {
+    const detail: Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }> = {};
+    Object.entries(metalRatesRaw).forEach(([sym, v]) => { if (sym.startsWith('GOLD_')) detail[sym] = v; });
+    return detail;
+  }, [metalRatesRaw]);
   const [editKarat, setEditKarat] = useState<string | null>(null);
   const [editKaratVal, setEditKaratVal] = useState('');
   const [karatMsg, setKaratMsg] = useState('');
@@ -1496,14 +1621,12 @@ export default function AdminPage() {
   const [expandedNotifId, setExpandedNotifId] = useState<number | null>(null);
 
   // Live Broadcast state
-  interface BroadcastData { text: string; textColor: string; countdown?: number; countdownColor?: string; startedAt: string; endsAt?: string; speed?: 'slow' | 'normal' | 'fast'; }
   const [broadcastText, setBroadcastText] = useState('');
   const [broadcastTextColor, setBroadcastTextColor] = useState('#ffffff');
   const [broadcastCountdownEnabled, setBroadcastCountdownEnabled] = useState(false);
   const [broadcastCountdownSecs, setBroadcastCountdownSecs] = useState('60');
   const [broadcastCountdownColor, setBroadcastCountdownColor] = useState('#ff4444');
   const [broadcastSpeed, setBroadcastSpeed] = useState<'slow' | 'normal' | 'fast'>('normal');
-  const [broadcastActive, setBroadcastActive] = useState<BroadcastData | null>(null);
   const [broadcastElapsed, setBroadcastElapsed] = useState(0);
   const [broadcastRemaining, setBroadcastRemaining] = useState(0);
   const [broadcastStarting, setBroadcastStarting] = useState(false);
@@ -1543,37 +1666,7 @@ export default function AdminPage() {
   const goldKarat24 = goldData?.karats.find(k => k.karat === 24);
   const tabRef = useRef<HTMLDivElement>(null);
 
-  // ── Fetch functions ────────────────────────────────────────────────────────
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/stats', { headers: { 'X-Admin-Token': token ?? '' } });
-      if (res.ok) setStats(await res.json() as AdminStats);
-    } catch {}
-  }, [token]);
-
-  const fetchUsers = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/users', { headers: { 'X-Admin-Token': token ?? '' } });
-      if (res.ok) setUsers(await res.json() as RegisteredUser[]);
-    } catch {}
-  }, [token]);
-
-  const fetchDeletionRequests = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/deletion-requests', { headers: { 'X-Admin-Token': token ?? '' } });
-      if (res.ok) setDeletionRequests(await res.json() as DeletionRequest[]);
-    } catch {}
-  }, [token]);
-
-  const fetchAdminMessages = useCallback(async () => {
-    if (!token) return;
-    setMessagesLoading(true);
-    try {
-      const res = await fetch('/api/admin/messages', { headers: { 'X-Admin-Token': token } });
-      if (res.ok) setAdminMessages(await res.json() as AdminMessage[]);
-    } catch {} finally { setMessagesLoading(false); }
-  }, [token]);
+  // ── Action handlers ─────────────────────────────────────────────────────────
 
   const sendDirectMessage = async () => {
     if (!msgSelectedUser || !msgTitle.trim() || !msgBody.trim() || !token) return;
@@ -1595,7 +1688,7 @@ export default function AdminPage() {
       if (res.ok) {
         setMsgTitle(''); setMsgBody(''); setMsgSelectedUser(null); setMsgUserSearch('');
         setMsgSent('تم إرسال الرسالة بنجاح ✓');
-        await fetchAdminMessages();
+        await queryClient.invalidateQueries({ queryKey: ['admin-messages', token] });
         setTimeout(() => setMsgSent(''), 4000);
       } else {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -1605,33 +1698,6 @@ export default function AdminPage() {
     } catch { setMsgSent('خطأ في الاتصال'); setTimeout(() => setMsgSent(''), 5000); } finally { setMsgSending(false); }
   };
 
-  const fetchBuySellOverrides = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/rate-overrides');
-      if (res.ok) setBuySellOverrides(await res.json() as Record<string, BuySellOverride>);
-    } catch {}
-  }, []);
-
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const res = await fetch('/api/notifications');
-      if (res.ok) setNotifications(await res.json() as SypNotification[]);
-    } catch {}
-  }, []);
-
-  const fetchBroadcast = useCallback(async () => {
-    try {
-      const res = await fetch('/api/broadcast');
-      if (res.ok) {
-        const data = await res.json() as BroadcastData | null;
-        setBroadcastActive(data);
-        if (data?.startedAt) {
-          setBroadcastElapsed(Math.floor((Date.now() - new Date(data.startedAt).getTime()) / 1000));
-          if (data.endsAt) setBroadcastRemaining(Math.max(0, Math.floor((new Date(data.endsAt).getTime() - Date.now()) / 1000)));
-        }
-      }
-    } catch {}
-  }, []);
 
   const startBroadcast = async () => {
     if (!broadcastText.trim() || !token) return;
@@ -1652,7 +1718,7 @@ export default function AdminPage() {
       });
       if (res.ok) {
         const data = await res.json() as BroadcastData;
-        setBroadcastActive(data);
+        queryClient.setQueryData<BroadcastData | null>(['admin-broadcast'], data);
         setBroadcastElapsed(0);
         if (data.endsAt) setBroadcastRemaining(Math.max(0, Math.floor((new Date(data.endsAt).getTime() - Date.now()) / 1000)));
         setBroadcastText('');
@@ -1663,71 +1729,13 @@ export default function AdminPage() {
   const stopBroadcast = async () => {
     if (!token) return;
     await fetch('/api/broadcast', { method: 'DELETE', headers: { 'X-Admin-Token': token } });
-    setBroadcastActive(null);
+    queryClient.setQueryData<BroadcastData | null>(['admin-broadcast'], null);
     setBroadcastElapsed(0);
     setBroadcastRemaining(0);
   };
 
-  const fetchSypRate = useCallback(async () => {
-    try {
-      const res = await fetch('/api/settings/syp-rate');
-      if (res.ok) {
-        const data = await res.json() as { rate: number; isManual: boolean; updatedAt: string };
-        setSypRateCurrent(data.rate);
-        setSypRateIsManual(data.isManual);
-        setSypRateInput(data.rate.toString());
-        setSypRateUpdatedAt(data.updatedAt);
-      }
-    } catch {}
-  }, []);
 
-  const fetchVendors = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/vendors', { headers: { 'X-Admin-Token': token ?? '' } });
-      if (res.ok) {
-        const raw = await res.json() as Record<string, unknown>[];
-        setVendors(raw.map(v => ({
-          id: v.id as number,
-          supabaseId: (v.user_id ?? v.supabaseId ?? v.id) as string,
-          businessName: (v.business_name ?? v.businessName) as string,
-          fullName: (v.owner_name ?? v.fullName ?? '') as string,
-          email: (v.email ?? (v.profiles as Record<string, unknown> | undefined)?.email ?? '') as string,
-          phone: (v.phone ?? (v.profiles as Record<string, unknown> | undefined)?.phone ?? '') as string,
-          governorate: (v.governorate ?? '') as string,
-          city: (v.city ?? '') as string,
-          address: v.address as string | undefined,
-          category: (Array.isArray(v.category_ids) ? (v.category_ids as string[])[0] : (v.category ?? '')) as string,
-          trustScore: ((v.trust_score ?? v.trustScore ?? 5) as number) * (typeof v.trust_score === 'number' && v.trust_score <= 10 ? 10 : 1),
-          isActive: (v.is_active ?? v.isActive ?? true) as boolean,
-          logoUrl: (v.logo_url ?? v.logoUrl) as string | undefined,
-          createdAt: (v.created_at ?? v.createdAt) as string,
-        })));
-      }
-    } catch {}
-  }, [token]);
 
-  const fetchVendorApplications = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/vendor-applications', { headers: { 'X-Admin-Token': token ?? '' } });
-      if (res.ok) {
-        const raw = await res.json() as Record<string, unknown>[];
-        setVendorApplications(raw.map(a => ({
-          id: a.id as number,
-          businessName: (a.business_name ?? a.businessName) as string,
-          fullName: (a.owner_name ?? a.fullName ?? '') as string,
-          email: (a.email ?? (a.profiles as Record<string, unknown> | undefined)?.email ?? '') as string,
-          phone: (a.phone ?? '') as string,
-          governorate: (a.governorate ?? '') as string,
-          city: (a.city ?? '') as string,
-          address: (a.address ?? '') as string,
-          category: (a.category ?? '') as string,
-          status: (a.status ?? 'pending') as 'pending' | 'approved' | 'rejected',
-          adminNotes: (a.reject_reason ?? a.adminNotes) as string | undefined,
-          createdAt: (a.created_at ?? a.createdAt) as string,
-        })));
-      }
-    } catch {}
-  }, [token]);
 
   const saveVendor = async () => {
     if (!vendorForm.businessName || !vendorForm.category) {
@@ -1755,7 +1763,7 @@ export default function AdminPage() {
         setVendorMsg('تم إنشاء حساب التاجر بنجاح');
         setCreateVendorOpen(false);
         setVendorForm({ supabaseId: '', businessName: '', fullName: '', email: '', phone: '', governorate: '', city: '', address: '', category: '', trustScore: '50', logoUrl: '' });
-        fetchVendors();
+        void queryClient.invalidateQueries({ queryKey: ['admin-vendors', token] });
         setTimeout(() => setVendorMsg(''), 4000);
       } else { const d = await res.json() as { error?: string }; setVendorMsg(`${d.error ?? 'فشل الإنشاء'}`); }
     } catch { setVendorMsg('خطأ في الاتصال'); }
@@ -1781,7 +1789,7 @@ export default function AdminPage() {
       headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token ?? '' },
       body: JSON.stringify({ status, reject_reason: adminNotes }),
     });
-    fetchVendorApplications();
+    void queryClient.invalidateQueries({ queryKey: ['admin-vendor-apps', token] });
   };
 
   const confirmAcceptApp = async () => {
@@ -1826,8 +1834,8 @@ export default function AdminPage() {
           });
         }
       }
-      fetchVendorApplications();
-      fetchVendors();
+      void queryClient.invalidateQueries({ queryKey: ['admin-vendor-apps', token] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-vendors', token] });
       setNotifyApp(acceptingApp);
       setAcceptingApp(null);
       document.dispatchEvent(new CustomEvent('syp-vendor-approved'));
@@ -1863,7 +1871,7 @@ export default function AdminPage() {
           });
         }
       }
-      fetchVendorApplications();
+      void queryClient.invalidateQueries({ queryKey: ['admin-vendor-apps', token] });
       setRejectingApp(null);
     } catch { setRejectMsg('خطأ في الاتصال'); }
     setRejectSaving(false);
@@ -1883,7 +1891,7 @@ export default function AdminPage() {
       });
       if (res.ok) {
         setNotifyApp(null);
-        fetchNotifications();
+        void queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
       }
     } catch {}
     setSendingAppNotif(false);
@@ -1897,7 +1905,7 @@ export default function AdminPage() {
       confirmLabel: 'حذف',
       onConfirm: async () => {
         await fetch(`/api/admin/vendors/${id}`, { method: 'DELETE', headers: { 'X-Admin-Token': token ?? '' } });
-        fetchVendors();
+        void queryClient.invalidateQueries({ queryKey: ['admin-vendors', token] });
       },
     });
   };
@@ -1937,38 +1945,7 @@ export default function AdminPage() {
     }
   }, [token, clearHistoryDays, fetchOverrideHistory]);
 
-  const fetchGoldOverride = useCallback(async () => {
-    try {
-      const res = await fetch('/api/settings/gold-rate');
-      if (res.ok) {
-        const data = await res.json() as { isManual: boolean; override?: { pricePerGramSYP: number; updatedAt: string } };
-        setGoldOverrideActive(data.isManual);
-        if (data.override) {
-          setGoldOverrideInput(data.override.pricePerGramSYP.toString());
-          setGoldOverrideUpdatedAt(data.override.updatedAt);
-        } else {
-          setGoldOverrideUpdatedAt(null);
-        }
-      }
-    } catch {}
-  }, []);
 
-  const fetchMetalOverrides = useCallback(async () => {
-    try {
-      const res = await fetch('/api/settings/metal-rates');
-      if (res.ok) {
-        const data = await res.json() as Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }>;
-        const map: Record<string, number> = {};
-        const detail: Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }> = {};
-        Object.entries(data).forEach(([sym, v]) => {
-          if (v.isManual) map[sym] = v.priceSYP;
-          detail[sym] = { priceSYP: v.priceSYP, updatedAt: v.updatedAt, isManual: v.isManual };
-        });
-        setMetalOverrideState(map);
-        setMetalOverridesDetail(detail);
-      }
-    } catch {}
-  }, []);
 
   const saveGoldOverride = async () => {
     const price = parseFloat(goldOverrideInput.replace(/,/g, ''));
@@ -1981,7 +1958,8 @@ export default function AdminPage() {
         body: JSON.stringify({ pricePerGramSYP: price }),
       });
       if (res.ok) {
-        setGoldOverrideActive(true);
+        void queryClient.invalidateQueries({ queryKey: ['admin-gold-override'] });
+        setGoldOverrideEdit(null);
         setGoldOverrideMsg('تم حفظ سعر الذهب اليدوي');
         refetchGold();
         setTimeout(() => setGoldOverrideMsg(''), 3000);
@@ -1993,9 +1971,8 @@ export default function AdminPage() {
     try {
       const sbToken = await getSupabaseToken();
       await fetch('/api/settings/gold-rate', { method: 'DELETE', headers: { 'X-Admin-Token': token ?? '', ...(sbToken ? { Authorization: `Bearer ${sbToken}` } : {}) } });
-      setGoldOverrideActive(false);
+      void queryClient.invalidateQueries({ queryKey: ['admin-gold-override'] });
       setGoldOverrideMsg('تم إلغاء التجاوز، سيعود للسعر التلقائي');
-      void fetchGoldOverride();
       refetchGold();
       setTimeout(() => setGoldOverrideMsg(''), 3000);
     } catch {}
@@ -2013,7 +1990,7 @@ export default function AdminPage() {
       });
       if (res.ok) {
         setMetalMsg('تم تفعيل السعر المحفوظ');
-        fetchMetalOverrides();
+        void queryClient.invalidateQueries({ queryKey: ['admin-metal-rates'] });
         setTimeout(() => setMetalMsg(''), 3000);
       }
     } catch {}
@@ -2033,7 +2010,7 @@ export default function AdminPage() {
         setEditMetal(null);
         setEditMetalVal('');
         setMetalMsg('تم حفظ السعر');
-        fetchMetalOverrides();
+        void queryClient.invalidateQueries({ queryKey: ['admin-metal-rates'] });
         setTimeout(() => setMetalMsg(''), 3000);
       }
     } catch { setMetalMsg('فشل الحفظ'); }
@@ -2043,37 +2020,11 @@ export default function AdminPage() {
     try {
       const sbToken = await getSupabaseToken();
       await fetch(`/api/settings/metal-rates/${symbol}`, { method: 'DELETE', headers: { 'X-Admin-Token': token ?? '', ...(sbToken ? { Authorization: `Bearer ${sbToken}` } : {}) } });
-      fetchMetalOverrides();
+      void queryClient.invalidateQueries({ queryKey: ['admin-metal-rates'] });
     } catch {}
   };
 
-  const fetchKaratOverrides = useCallback(async () => {
-    try {
-      const res = await fetch('/api/settings/metal-rates');
-      if (res.ok) {
-        const data = await res.json() as Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }>;
-        const map: Record<string, number> = {};
-        const detail: Record<string, { priceSYP: number; updatedAt: string; isManual: boolean }> = {};
-        Object.entries(data).forEach(([sym, v]) => {
-          if (!sym.startsWith('GOLD_')) return;
-          if (v.isManual) map[sym] = v.priceSYP;
-          detail[sym] = { priceSYP: v.priceSYP, updatedAt: v.updatedAt, isManual: v.isManual };
-        });
-        setKaratOverrides(map);
-        setKaratOverridesDetail(detail);
-      }
-    } catch {}
-  }, []);
 
-  const refreshAll = useCallback(() => {
-    fetchStats(); fetchUsers(); fetchDeletionRequests();
-    fetchBuySellOverrides(); fetchNotifications(); fetchSypRate();
-    fetchGoldOverride(); fetchMetalOverrides(); fetchKaratOverrides();
-    fetchVendors(); fetchVendorApplications(); fetchAdminMessages();
-    refetchRates(); refetchGold(); fetchBroadcast();
-  }, [fetchStats, fetchUsers, fetchDeletionRequests, fetchBuySellOverrides, fetchNotifications, fetchSypRate, fetchGoldOverride, fetchMetalOverrides, fetchKaratOverrides, fetchVendors, fetchVendorApplications, fetchAdminMessages, refetchRates, refetchGold, fetchBroadcast]);
-
-  useDataEffect(() => { if (token) void refreshAll(); }, [token, refreshAll]);
 
   /** Returns the current Supabase access token to send as Authorization header. */
   const getSupabaseToken = useCallback(async (): Promise<string> => {
@@ -2115,7 +2066,7 @@ export default function AdminPage() {
         const rem = Math.max(0, Math.floor((new Date(broadcastActive.endsAt).getTime() - Date.now()) / 1000));
         setBroadcastRemaining(rem);
         if (rem === 0) {
-          setBroadcastActive(null);
+          queryClient.setQueryData<BroadcastData | null>(['admin-broadcast'], null);
           clearInterval(interval);
         }
       }
@@ -2124,7 +2075,7 @@ export default function AdminPage() {
   }, [broadcastActive]);
 
   // Compute AI rating stats from all stored conversations
-  useDataEffect(() => {
+  const aiRatingStats = useMemo(() => {
     const dailyMap: Record<string, { up: number; down: number }> = {};
     let totalUp = 0, totalDown = 0;
     for (const key of Object.keys(localStorage)) {
@@ -2144,7 +2095,8 @@ export default function AdminPage() {
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-7)
       .map(([date, counts]) => ({ date, ...counts }));
-    setAiRatingStats({ totalUp, totalDown, daily });
+    return { totalUp, totalDown, daily };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   // ── Supabase Real-Time Subscriptions ──────────────────────────────────────
@@ -2153,51 +2105,38 @@ export default function AdminPage() {
     const channel = supabase
       .channel('admin-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-        fetchUsers(); fetchStats();
+        void queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
+        void queryClient.invalidateQueries({ queryKey: ['admin-stats', token] });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_applications' }, () => {
-        fetchVendorApplications();
+        void queryClient.invalidateQueries({ queryKey: ['admin-vendor-apps', token] });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vendors' }, () => {
-        fetchVendors();
+        void queryClient.invalidateQueries({ queryKey: ['admin-vendors', token] });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bans' }, () => {
-        fetchUsers(); fetchStats();
+        void queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
+        void queryClient.invalidateQueries({ queryKey: ['admin-stats', token] });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'delete_requests' }, () => {
-        fetchDeletionRequests();
+        void queryClient.invalidateQueries({ queryKey: ['admin-deletion-reqs', token] });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [token, fetchUsers, fetchStats, fetchVendorApplications, fetchVendors, fetchDeletionRequests]);
+  }, [token, queryClient]);
 
-  useDataEffect(() => {
-    if (!vendorDetail?.supabaseId || !token) { setVendorDetailPrices([]); return; }
-    setVendorPricesLoading(true);
-    fetch(`/api/admin/vendors/${vendorDetail.supabaseId}/prices`, {
-      headers: { 'X-Admin-Token': token },
-    })
-      .then(r => r.ok ? r.json() : [])
-      .then((d: unknown) => setVendorDetailPrices(Array.isArray(d) ? d : []))
-      .catch(() => setVendorDetailPrices([]))
-      .finally(() => setVendorPricesLoading(false));
-  }, [vendorDetail?.supabaseId, token]);
 
-  useEffect(() => {
-    const lphMap: Record<string, string> = {};
-    const verifyMap: Record<string, string> = {};
-    users.forEach(u => {
-      if (u.supabaseId) {
-        const lph = localStorage.getItem(`syp-lph-${u.supabaseId}`);
-        if (lph) lphMap[u.supabaseId] = lph;
-        const vstatus = localStorage.getItem(`syp-verify-status-${u.supabaseId}`);
-        if (vstatus) verifyMap[u.supabaseId] = vstatus;
-      }
-    });
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setUserLphIds(lphMap);
-    setUserVerifyStatus(verifyMap);
+  const userLphIds = useMemo(() => {
+    const map: Record<string, string> = {};
+    users.forEach(u => { if (u.supabaseId) { const lph = localStorage.getItem(`syp-lph-${u.supabaseId}`); if (lph) map[u.supabaseId] = lph; } });
+    return map;
   }, [users]);
+  const [verifyStatusOverride, setVerifyStatusOverride] = useState<Record<string, string>>({});
+  const userVerifyStatus = useMemo(() => {
+    const map: Record<string, string> = {};
+    users.forEach(u => { if (u.supabaseId) { const v = localStorage.getItem(`syp-verify-status-${u.supabaseId}`); if (v) map[u.supabaseId] = v; } });
+    return { ...map, ...verifyStatusOverride };
+  }, [users, verifyStatusOverride]);
 
   // ── Action handlers ────────────────────────────────────────────────────────
 
@@ -2210,11 +2149,11 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token ?? '' },
         body: JSON.stringify({ reason: reason || 'تم الحظر من قبل المدير' }),
       });
-      setUsers(prev => prev.map(u2 => u2.walletId === walletId ? { ...u2, banned: true, banReason: reason || 'تم الحظر من قبل المدير' } : u2));
+      queryClient.setQueryData<RegisteredUser[]>(['admin-users', token], prev => prev?.map(u2 => u2.walletId === walletId ? { ...u2, banned: true, banReason: reason || 'تم الحظر من قبل المدير' } : u2) ?? []);
       setBanReason('');
       setBanningUser(null);
-      await fetchUsers();
-      await fetchStats();
+      await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-stats', token] });
       setActionNotif({
         visible: true, walletId, targetName: u?.fullName || u?.businessName || walletId,
         title: 'تم تقييد حسابك',
@@ -2237,9 +2176,9 @@ export default function AdminPage() {
         console.error('Unban failed:', err.error ?? res.statusText);
         return;
       }
-      setUsers(prev => prev.map(u2 => u2.walletId === walletId ? { ...u2, banned: false, banReason: '' } : u2));
-      await fetchUsers();
-      await fetchStats();
+      queryClient.setQueryData<RegisteredUser[]>(['admin-users', token], prev => prev?.map(u2 => u2.walletId === walletId ? { ...u2, banned: false, banReason: '' } : u2) ?? []);
+      await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-stats', token] });
       setActionNotif({
         visible: true, walletId, targetName: u?.fullName || u?.businessName || walletId,
         title: 'تم رفع الحظر عن حسابك',
@@ -2263,7 +2202,7 @@ export default function AdminPage() {
       setRestrictReason('');
       setRestrictDays('');
       setRestrictingUser(null);
-      await fetchUsers();
+      await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
       setActionNotif({
         visible: true, walletId, targetName: u?.fullName || u?.businessName || walletId,
         title: `تم تقييد حسابك لمدة ${days} يوم`,
@@ -2281,7 +2220,7 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 'X-Admin-Token': token ?? '' },
       });
-      await fetchUsers();
+      await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
       setActionNotif({
         visible: true, walletId, targetName: u?.fullName || u?.businessName || walletId,
         title: 'تم رفع التقييد عن حسابك',
@@ -2302,7 +2241,7 @@ export default function AdminPage() {
       });
       setDeleteReason('');
       setDeletingUser(null);
-      await fetchUsers();
+      await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
       setActionNotif({
         visible: true, walletId, targetName: u?.fullName || u?.businessName || walletId,
         title: 'تم حذف حسابك',
@@ -2322,7 +2261,7 @@ export default function AdminPage() {
       });
       if (!res.ok) return;
       setDeletingUser(null);
-      await fetchUsers();
+      await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
       setActionNotif({
         visible: true, walletId, targetName: u?.fullName || u?.businessName || walletId,
         title: 'تم استرجاع حسابك',
@@ -2347,8 +2286,8 @@ export default function AdminPage() {
             headers: { 'X-Admin-Token': token ?? '' },
           });
           setExpandedUser(null);
-          await fetchUsers();
-          await fetchStats();
+          await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
+          await queryClient.invalidateQueries({ queryKey: ['admin-stats', token] });
         } catch {}
       },
     });
@@ -2368,9 +2307,9 @@ export default function AdminPage() {
           headers: { 'X-Admin-Token': token ?? '' },
         }).catch(() => {});
       }
-      await fetchDeletionRequests();
-      await fetchUsers();
-      await fetchStats();
+      await queryClient.invalidateQueries({ queryKey: ['admin-deletion-reqs', token] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-stats', token] });
       setActionNotif({
         visible: true, walletId: req.walletId, targetName: req.fullName,
         title: 'تم قبول طلب الحذف ومعالجته',
@@ -2388,8 +2327,8 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token ?? '' },
         body: JSON.stringify({ status: 'rejected' }),
       });
-      await fetchDeletionRequests();
-      await fetchStats();
+      await queryClient.invalidateQueries({ queryKey: ['admin-deletion-reqs', token] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-stats', token] });
       setActionNotif({
         visible: true, walletId: req.walletId, targetName: req.fullName,
         title: 'تم رفض طلب حذف حسابك',
@@ -2415,7 +2354,7 @@ export default function AdminPage() {
         setEditCurrency(null);
         setEditBuyVal('');
         setEditSellVal('');
-        await fetchBuySellOverrides();
+        await queryClient.invalidateQueries({ queryKey: ['admin-buy-sell-overrides'] });
         setTimeout(() => setRateMsg(''), 3000);
       }
     } catch {}
@@ -2428,7 +2367,7 @@ export default function AdminPage() {
         method: 'DELETE',
         headers: { 'X-Admin-Token': token ?? '', ...(sbToken ? { Authorization: `Bearer ${sbToken}` } : {}) },
       });
-      await fetchBuySellOverrides();
+      await queryClient.invalidateQueries({ queryKey: ['admin-buy-sell-overrides'] });
     } catch {}
   };
 
@@ -2446,9 +2385,8 @@ export default function AdminPage() {
       });
       if (res.ok) {
         const data = await res.json() as { rate: number; isManual: boolean; updatedAt: string };
-        setSypRateCurrent(data.rate);
-        setSypRateIsManual(data.isManual);
-        setSypRateUpdatedAt(data.updatedAt);
+        void queryClient.invalidateQueries({ queryKey: ['admin-syp-rate'] });
+        setSypRateEdit(null);
         setSypRateMsg(data.isManual ? 'تم تفعيل السعر اليدوي بنجاح' : 'تم الرجوع للسعر التلقائي بنجاح');
         refetchRates(); refetchGold();
         setTimeout(() => setSypRateMsg(''), 4000);
@@ -2496,8 +2434,8 @@ export default function AdminPage() {
         if (res.ok) {
           setNotifMsg('تم الإرسال لجميع المستخدمين بنجاح');
           setNotifTitle(''); setNotifBody('');
-          await fetchNotifications();
-          await fetchStats();
+          await queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
+          await queryClient.invalidateQueries({ queryKey: ['admin-stats', token] });
           setTimeout(() => setNotifMsg(''), 3000);
         } else { setNotifMsg('فشل الإرسال، حاول مجدداً'); }
       }
@@ -2527,7 +2465,7 @@ export default function AdminPage() {
         const updated = await res.json() as VendorProfileAdmin;
         setVendorDetail(updated);
         setVendorDetailEdit(updated);
-        setVendors(v => v.map(x => x.id === updated.id ? updated : x));
+        queryClient.setQueryData<VendorProfileAdmin[]>(['admin-vendors', token], v => v?.map(x => x.id === updated.id ? updated : x) ?? []);
         setVendorDetailMsg('تم الحفظ بنجاح');
         setTimeout(() => setVendorDetailMsg(''), 3000);
       } else { setVendorDetailMsg('فشل الحفظ'); }
@@ -2548,7 +2486,7 @@ export default function AdminPage() {
         const updated = await res.json() as VendorProfileAdmin;
         setVendorDetail(updated);
         setVendorDetailEdit(updated);
-        setVendors(v => v.map(x => x.id === updated.id ? updated : x));
+        queryClient.setQueryData<VendorProfileAdmin[]>(['admin-vendors', token], v => v?.map(x => x.id === updated.id ? updated : x) ?? []);
         if (!newIsActive) {
           const walletId = users.find(u => u.supabaseId === updated.supabaseId)?.walletId;
           setActionNotif({
@@ -2576,7 +2514,7 @@ export default function AdminPage() {
         method: 'DELETE', headers: { 'X-Admin-Token': token },
       });
       const walletId = users.find(u => u.supabaseId === vendorDetail.supabaseId)?.walletId;
-      setVendors(v => v.filter(x => x.id !== vendorDetail.id));
+      queryClient.setQueryData<VendorProfileAdmin[]>(['admin-vendors', token], v => v?.filter(x => x.id !== vendorDetail.id) ?? []);
       setVendorDetail(null);
       setVendorDetailEdit(null);
       if (walletId) {
@@ -2594,7 +2532,7 @@ export default function AdminPage() {
   const deleteNotification = async (id: number) => {
     await fetch(`/api/notifications/${id}`, { method: 'DELETE', headers: { 'X-Admin-Token': token ?? '' } });
     setSelectedNotifIds(prev => { const next = new Set(prev); next.delete(id); return next; });
-    await fetchNotifications();
+    await queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
   };
 
   const bulkDeleteNotifications = async () => {
@@ -2603,7 +2541,7 @@ export default function AdminPage() {
       fetch(`/api/notifications/${id}`, { method: 'DELETE', headers: { 'X-Admin-Token': token ?? '' } })
     ));
     setSelectedNotifIds(new Set());
-    await fetchNotifications();
+    await queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
   };
 
   const editNotification = async (id: number) => {
@@ -2615,7 +2553,7 @@ export default function AdminPage() {
     });
     setSavingNotif(false);
     setEditingNotifId(null);
-    await fetchNotifications();
+    await queryClient.invalidateQueries({ queryKey: ['admin-notifications'] });
   };
 
   const saveKaratOverride = async (karatKey: string) => {
@@ -2632,7 +2570,7 @@ export default function AdminPage() {
         setEditKarat(null);
         setEditKaratVal('');
         setKaratMsg('تم حفظ سعر القيراط');
-        fetchKaratOverrides();
+        void queryClient.invalidateQueries({ queryKey: ['admin-metal-rates'] });
         setTimeout(() => setKaratMsg(''), 3000);
       }
     } catch { setKaratMsg('فشل الحفظ'); }
@@ -2642,7 +2580,7 @@ export default function AdminPage() {
     try {
       const sbToken = await getSupabaseToken();
       await fetch(`/api/settings/metal-rates/${karatKey}`, { method: 'DELETE', headers: { 'X-Admin-Token': token ?? '', ...(sbToken ? { Authorization: `Bearer ${sbToken}` } : {}) } });
-      fetchKaratOverrides();
+      void queryClient.invalidateQueries({ queryKey: ['admin-metal-rates'] });
     } catch {}
   };
 
@@ -2658,7 +2596,7 @@ export default function AdminPage() {
       });
       if (res.ok) {
         setKaratMsg('تم تفعيل السعر المحفوظ');
-        fetchKaratOverrides();
+        void queryClient.invalidateQueries({ queryKey: ['admin-metal-rates'] });
         setTimeout(() => setKaratMsg(''), 3000);
       }
     } catch {}
@@ -2668,7 +2606,7 @@ export default function AdminPage() {
     const current = userVerifyStatus[userId];
     const next = current === 'approved' ? 'rejected' : 'approved';
     localStorage.setItem(`syp-verify-status-${userId}`, next);
-    setUserVerifyStatus(prev => ({ ...prev, [userId]: next }));
+    setVerifyStatusOverride(prev => ({ ...prev, [userId]: next }));
     if (next === 'approved') {
       localStorage.setItem(`syp-user-badge-${userId}`, 'golden');
     } else {
@@ -2697,7 +2635,7 @@ export default function AdminPage() {
         body: JSON.stringify(userEditForm),
       });
       if (res.ok) {
-        await fetchUsers();
+        await queryClient.invalidateQueries({ queryKey: ['admin-users', token] });
         setUserEditResult('ok');
         setTimeout(() => { setEditingUser(null); setUserEditResult(null); }, 1200);
       } else {
@@ -2707,17 +2645,6 @@ export default function AdminPage() {
     setUserEditSaving(false);
   };
 
-  const loadVerifyRequests = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/verify-requests', { headers: { 'X-Admin-Token': token ?? '' } });
-      if (res.ok) {
-        const all = await res.json() as VerifyRequest[];
-        setVerifyRequests(all.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime()));
-      }
-    } catch {}
-  }, [token]);
-
-  useDataEffect(() => { if (token) void loadVerifyRequests(); }, [token, loadVerifyRequests]);
 
   const handleVerifyApprove = (req: VerifyRequest) => {
     try {
@@ -2725,9 +2652,9 @@ export default function AdminPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token ?? '' },
         body: JSON.stringify({ action: 'approved' }),
-      }).then(() => void loadVerifyRequests()).catch(() => {});
+      }).then(() => void queryClient.invalidateQueries({ queryKey: ['admin-verify-reqs', token] })).catch(() => {});
       localStorage.setItem(`syp-verify-status-${req.supabaseId}`, 'approved');
-      void loadVerifyRequests();
+      void queryClient.invalidateQueries({ queryKey: ['admin-verify-reqs', token] });
       const walletId = users.find(u => u.supabaseId === req.supabaseId)?.walletId;
       setActionNotif({
         visible: true, walletId, targetName: req.fullName,
@@ -2745,9 +2672,9 @@ export default function AdminPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token ?? '' },
         body: JSON.stringify({ action: 'rejected' }),
-      }).then(() => void loadVerifyRequests()).catch(() => {});
+      }).then(() => void queryClient.invalidateQueries({ queryKey: ['admin-verify-reqs', token] })).catch(() => {});
       localStorage.setItem(`syp-verify-status-${req.supabaseId}`, 'rejected');
-      void loadVerifyRequests();
+      void queryClient.invalidateQueries({ queryKey: ['admin-verify-reqs', token] });
       const walletId = users.find(u => u.supabaseId === req.supabaseId)?.walletId;
       setActionNotif({
         visible: true, walletId, targetName: req.fullName,
@@ -2861,7 +2788,7 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={refreshAll}
+            <button onClick={() => { void queryClient.invalidateQueries({ queryKey: ['admin-stats', token] }); void queryClient.invalidateQueries({ queryKey: ['admin-users', token] }); void queryClient.invalidateQueries({ queryKey: ['admin-vendors', token] }); void queryClient.invalidateQueries({ queryKey: ['admin-notifications'] }); }}
               className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors">
               <RefreshCw className="w-4 h-4 text-white" />
             </button>
@@ -2942,7 +2869,6 @@ export default function AdminPage() {
 
               {/* Active users today */}
               {(() => {
-                // eslint-disable-next-line react-hooks/purity
                 const now = Date.now();
                 const activeToday = users.filter(u =>
                   u.lastSeen && (now - new Date(u.lastSeen).getTime()) < 24 * 60 * 60 * 1000 && !u.softDeleted
@@ -3744,10 +3670,10 @@ export default function AdminPage() {
                     )}
                   </div>
                   <div className="flex gap-2">
-                    <input type="number" value={sypRateInput} onChange={e => setSypRateInput(e.target.value)}
+                    <input type="number" value={sypRateInput} onChange={e => setSypRateEdit(e.target.value)}
                       className="flex-1 border border-border rounded-xl px-4 py-2.5 text-sm font-bold bg-background focus:outline-none focus:ring-2 focus:ring-primary/40"
                       dir="ltr" placeholder="مثال: 13750" min="1" />
-                    <button onClick={fetchSypRate}
+                    <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['admin-syp-rate'] })}
                       className="p-2.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 transition-colors">
                       <RefreshCw className="w-4 h-4 text-foreground/60" />
                     </button>
@@ -3907,12 +3833,12 @@ export default function AdminPage() {
                     <input
                       type="number"
                       value={goldOverrideInput}
-                      onChange={e => setGoldOverrideInput(e.target.value)}
+                      onChange={e => setGoldOverrideEdit(e.target.value)}
                       placeholder="سعر الغرام بالليرة السورية..."
                       className="flex-1 border border-border rounded-xl px-4 py-2.5 text-sm font-bold bg-background focus:outline-none focus:ring-2 focus:ring-amber-400/40"
                       dir="ltr"
                     />
-                    <button onClick={fetchGoldOverride}
+                    <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['admin-gold-override'] })}
                       className="p-2.5 rounded-xl border border-border bg-secondary hover:bg-secondary/80 transition-colors">
                       <RefreshCw className="w-4 h-4 text-foreground/60" />
                     </button>
@@ -4136,7 +4062,7 @@ export default function AdminPage() {
                   )}
                 </button>
                 <button
-                  onClick={() => { setVerifySubTab('verification'); loadVerifyRequests(); }}
+                  onClick={() => setVerifySubTab('verification')}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-all ${verifySubTab === 'verification' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground'}`}
                 >
                   <BadgeCheck className="w-3.5 h-3.5" />
@@ -4175,7 +4101,7 @@ export default function AdminPage() {
                                   headers: { 'X-Admin-Token': token ?? '' },
                                 }).catch(() => {})
                               ));
-                              setDeletionRequests(prev => prev.filter(r => !!r.fullName));
+                              queryClient.setQueryData<DeletionRequest[]>(['admin-deletion-reqs', token], prev => prev?.filter(r => !!r.fullName) ?? []);
                             },
                           });
                         }}
@@ -4270,7 +4196,7 @@ export default function AdminPage() {
                                       method: 'DELETE',
                                       headers: { 'X-Admin-Token': token ?? '' },
                                     }).catch(() => {});
-                                    setDeletionRequests(prev => prev.filter(r => r.id !== req.id));
+                                    queryClient.setQueryData<DeletionRequest[]>(['admin-deletion-reqs', token], prev => prev?.filter(r => r.id !== req.id) ?? []);
                                   },
                                 });
                               }}
@@ -4330,7 +4256,7 @@ export default function AdminPage() {
                             )}
                             {isProcessed && (
                               <button
-                                onClick={e => { e.stopPropagation(); openConfirm({ title: 'إخفاء الطلب', body: 'إخفاء هذا الطلب من القائمة؟', confirmLabel: 'إخفاء', onConfirm: () => setVerifyRequests(prev => prev.filter(r => r.id !== req.id)) }); }}
+                                onClick={e => { e.stopPropagation(); openConfirm({ title: 'إخفاء الطلب', body: 'إخفاء هذا الطلب من القائمة؟', confirmLabel: 'إخفاء', onConfirm: () => { queryClient.setQueryData<VerifyRequest[]>(['admin-verify-reqs', token], prev => prev?.filter(r => r.id !== req.id) ?? []); } }); }}
                                 className="w-5 h-5 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors"
                                 title="حذف"
                               >
@@ -4996,7 +4922,7 @@ export default function AdminPage() {
 
                       {/* Refresh button */}
                       <button
-                        onClick={() => { fetchSypRate(); void fetchGoldOverride(); void fetchMetalOverrides(); }}
+                        onClick={() => { void queryClient.invalidateQueries({ queryKey: ['admin-syp-rate'] }); void queryClient.invalidateQueries({ queryKey: ['admin-gold-override'] }); void queryClient.invalidateQueries({ queryKey: ['admin-metal-rates'] }); }}
                         className="flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors py-1"
                       >
                         <RefreshCw className="w-3 h-3" /> تحديث الحالة
@@ -5242,11 +5168,11 @@ export default function AdminPage() {
                 </div>
                 <CardContent className="p-4 flex flex-col gap-2">
                   <Button variant="outline" className="w-full gap-2 justify-start h-11"
-                    onClick={() => { refetchRates(); refetchGold(); fetchStats(); }}>
+                    onClick={() => { refetchRates(); refetchGold(); void queryClient.invalidateQueries({ queryKey: ['admin-stats', token] }); }}>
                     <RefreshCw className="w-4 h-4 text-primary" /> تحديث بيانات الأسعار من API
                   </Button>
                   <Button variant="outline" className="w-full gap-2 justify-start h-11"
-                    onClick={() => { fetchUsers(); fetchStats(); }}>
+                    onClick={() => { void queryClient.invalidateQueries({ queryKey: ['admin-users', token] }); void queryClient.invalidateQueries({ queryKey: ['admin-stats', token] }); }}>
                     <Users className="w-4 h-4 text-primary" /> تحديث بيانات المستخدمين
                   </Button>
                   <Button variant="outline" className="w-full gap-2 justify-start h-11 text-destructive border-destructive/30 hover:bg-destructive/10"
@@ -5258,7 +5184,7 @@ export default function AdminPage() {
                       onConfirm: async () => {
                         const sbToken = await getSupabaseToken();
                         await fetch('/api/admin/rate-overrides', { method: 'DELETE', headers: { 'X-Admin-Token': token ?? '', ...(sbToken ? { Authorization: `Bearer ${sbToken}` } : {}) } });
-                        await fetchBuySellOverrides();
+                        await queryClient.invalidateQueries({ queryKey: ['admin-buy-sell-overrides'] });
                       },
                     })}>
                     <X className="w-4 h-4" /> مسح جميع تجاوزات الأسعار
@@ -5745,7 +5671,7 @@ export default function AdminPage() {
                     ) : 'لا توجد طلبات معلقة'}
                   </p>
                 </div>
-                <button onClick={fetchVendorApplications}
+                <button onClick={() => void queryClient.invalidateQueries({ queryKey: ['admin-vendor-apps', token] })}
                   className="p-2 hover:bg-secondary rounded-xl transition-colors">
                   <RefreshCw className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -6343,7 +6269,6 @@ export default function AdminPage() {
                 {(() => {
                   type ActivityEvent = { id: string; type: 'user_reg' | 'vendor_join' | 'app_submit' | 'app_approve' | 'app_reject' | 'ban' | 'price_update'; label: string; sub: string; ts: number; color: string; icon: React.ElementType };
                   const events: ActivityEvent[] = [];
-                  // eslint-disable-next-line react-hooks/purity
                   const now = Date.now();
                   const DAY7 = 7 * 24 * 3600000;
                   // New user registrations (last 7 days)
@@ -6416,7 +6341,6 @@ export default function AdminPage() {
                 </div>
                 {(() => {
                   if (users.length === 0) return <p className="text-xs text-muted-foreground text-center py-4">لا بيانات</p>;
-                  // eslint-disable-next-line react-hooks/purity
                   const now = Date.now();
                   const DAY = 86400000;
                   const DAYS = 14;
@@ -6726,7 +6650,7 @@ export default function AdminPage() {
                       <Inbox className="w-4 h-4 text-primary" />
                       الرسائل المُرسلة ({adminMessages.length})
                     </CardTitle>
-                    <Button variant="ghost" size="sm" onClick={fetchAdminMessages} disabled={messagesLoading} className="h-7 w-7 p-0">
+                    <Button variant="ghost" size="sm" onClick={() => void queryClient.invalidateQueries({ queryKey: ['admin-messages', token] })} disabled={messagesLoading} className="h-7 w-7 p-0">
                       {messagesLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                     </Button>
                   </div>
@@ -6961,7 +6885,7 @@ export default function AdminPage() {
                                 headers: { 'content-type': 'application/json', 'x-admin-token': token },
                                 body: JSON.stringify({ isActive: !p.isActive }),
                               });
-                              setVendorDetailPrices(prev => prev.map(x => x.id === p.id ? { ...x, isActive: !p.isActive } : x));
+                              queryClient.setQueryData<unknown[]>(['admin-vendor-prices', vendorDetail?.supabaseId, token], prev => (prev ?? []).map(x => (x as Record<string, unknown>)['id'] === p.id ? { ...(x as object), isActive: !p.isActive } : x));
                             }}>
                             {p.isActive ? 'نشط' : 'مخفي'}
                           </button>
@@ -6980,7 +6904,7 @@ export default function AdminPage() {
                                   method: 'DELETE',
                                   headers: { 'x-admin-token': tok },
                                 });
-                                setVendorDetailPrices(prev => prev.filter(x => x.id !== p.id));
+                                queryClient.setQueryData<unknown[]>(['admin-vendor-prices', vendorDetail?.supabaseId, token], prev => (prev ?? []).filter(x => (x as Record<string, unknown>)['id'] !== p.id));
                               },
                             })}>
                             <X className="w-3 h-3" />
@@ -6993,7 +6917,6 @@ export default function AdminPage() {
 
                 {/* Vendor Activity Sparkline */}
                 {vendorDetailPrices.length > 0 && (() => {
-                  // eslint-disable-next-line react-hooks/purity
                   const now = Date.now();
                   const DAY = 86400000;
                   const DAYS = 14;
@@ -7571,7 +7494,7 @@ export default function AdminPage() {
       </AnimatePresence>
 
       {/* Admin Image Lightbox */}
-      <AdminImageLightbox src={adminLightboxSrc} onClose={() => setAdminLightboxSrc(null)} />
+      <AdminImageLightbox key={adminLightboxSrc ?? ''} src={adminLightboxSrc} onClose={() => setAdminLightboxSrc(null)} />
 
       {/* ─── Custom Confirm / Alert Modal ───────────────────────────────────── */}
       <AnimatePresence>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import { useGetExchangeRates, useGetGoldPrices, useGetNews, useGetProfile } from "@workspace/api-client-react";
 import { useAlertChecker } from '@/components/notifications-panel';
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Link, useLocation, useSearch } from 'wouter';
 import { useApp } from '@/context/app-context';
 import { useUser } from '@/context/auth-context';
-import { useDataEffect } from '@/hooks/use-data-effect';
 import { AnimatedLogo } from '@/components/animated-logo';
 import { LiveBadge, useMarketOpen } from '@/components/live-badge';
 import { GoldenBadge } from '@/components/golden-badge';
@@ -153,21 +152,14 @@ function CatFilterRow({ cats, category, setCategory, searchStr }: {
   setCategory: (c: string) => void;
   searchStr: string;
 }) {
-  const [highlight, setHighlight] = useState(false);
+  const highlight = useMemo(() => {
+    try { return new URLSearchParams(searchStr).get('highlight') === 'cats'; } catch { return false; }
+  }, [searchStr]);
   const rowRef = useRef<HTMLDivElement>(null);
 
-  useDataEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const params = new URLSearchParams(searchStr);
-      if (params.get('highlight') === 'cats') {
-        setHighlight(true);
-        rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        timer = setTimeout(() => setHighlight(false), 3000);
-      }
-    } catch { /* ignore */ }
-    return () => { if (timer) clearTimeout(timer); };
-  }, [searchStr]);
+  useLayoutEffect(() => {
+    if (highlight) rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlight]);
 
   return (
     <div ref={rowRef} className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>

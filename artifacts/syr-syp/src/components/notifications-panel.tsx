@@ -3,9 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, BellOff, Info, AlertTriangle, CheckCircle, TrendingUp, ShieldCheck, Trash2 } from 'lucide-react';
 import { GoldenBadge, AdminBadge, RainbowBadge } from './golden-badge';
 import { useCheckAlerts } from '@workspace/api-client-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useUser } from '@/context/auth-context';
-import { usePollingCallback } from '@/hooks/use-polling-callback';
 
 interface Notification {
   id: number;
@@ -147,12 +146,56 @@ function SenderBadge({ sender }: { sender: string }) {
   );
 }
 
+async function fetchNotificationsData(userId?: string): Promise<Notification[]> {
+  const walletId = userId ?? localStorage.getItem('syp-wallet-id') ?? undefined;
+  const adminMsgs: Notification[] = (() => {
+    try {
+      if (!walletId) return [];
+      const raw = localStorage.getItem(`syp-admin-messages-${walletId}`);
+      if (!raw) return [];
+      const msgs = JSON.parse(raw) as Array<{ id: number; title: string; body: string; type: string; createdAt: string }>;
+      return msgs.map(m => ({
+        id: m.id, title: m.title, body: m.body,
+        type: (m.type ?? 'info') as Notification['type'],
+        icon: 'admin', createdAt: m.createdAt, sender: 'LiraPro',
+      }));
+    } catch { return []; }
+  })();
+  let serverUserMsgs: Notification[] = [];
+  if (walletId) {
+    try {
+      const userRes = await fetch(`/api/notifications/user?walletId=${encodeURIComponent(walletId)}`);
+      if (userRes.ok) serverUserMsgs = await userRes.json() as Notification[];
+    } catch { /* ignore */ }
+  }
+  try {
+    const res = await fetch('/api/notifications');
+    if (!res.ok) return [...serverUserMsgs, ...getOrCreateWelcomeNotification(), ...getLocalNotifications(), ...adminMsgs];
+    const remote: Notification[] = await res.json();
+    const welcome = getOrCreateWelcomeNotification();
+    const local = getLocalNotifications();
+    const remoteIds = new Set(remote.map(n => n.id));
+    const seen = new Set<number>();
+    const extras = [...serverUserMsgs, ...welcome, ...local, ...adminMsgs].filter(w => {
+      if (remoteIds.has(w.id) || seen.has(w.id)) return false;
+      seen.add(w.id); return true;
+    });
+    const dismissed = getDismissedIds();
+    return [...extras, ...remote]
+      .filter(n => !dismissed.has(n.id))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 50);
+  } catch {
+    return [...serverUserMsgs, ...getOrCreateWelcomeNotification(), ...getLocalNotifications(), ...adminMsgs];
+  }
+}
+
 export function NotificationsPanel() {
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>(() => getOrCreateWelcomeNotification());
   const [readIds, setReadIds] = useState<Set<number>>(getReadIds);
   const panelRef = useRef<HTMLDivElement>(null);
   const { user } = useUser();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (user?.id) {
@@ -160,76 +203,22 @@ export function NotificationsPanel() {
     }
   }, [user?.id]);
 
-  const getPerUserAdminMessages = (): Notification[] => {
-    try {
-      const walletId = localStorage.getItem('syp-wallet-id');
-      if (!walletId) return [];
-      const key = `syp-admin-messages-${walletId}`;
-      const raw = localStorage.getItem(key);
-      if (!raw) return [];
-      const msgs = JSON.parse(raw) as Array<{ id: number; title: string; body: string; type: string; createdAt: string }>;
-      return msgs.map(m => ({
-        id: m.id,
-        title: m.title,
-        body: m.body,
-        type: (m.type ?? 'info') as Notification['type'],
-        icon: 'admin',
-        createdAt: m.createdAt,
-        sender: 'LiraPro',
-      }));
-    } catch { return []; }
-  };
-
-  const fetchNotifications = useCallback(async () => {
-    const adminMsgs = getPerUserAdminMessages();
-    const walletId = localStorage.getItem('syp-wallet-id');
-    let serverUserMsgs: Notification[] = [];
-    if (walletId) {
-      try {
-        const userRes = await fetch(`/api/notifications/user?walletId=${encodeURIComponent(walletId)}`);
-        if (userRes.ok) serverUserMsgs = await userRes.json() as Notification[];
-      } catch { /* ignore */ }
-    }
-    try {
-      const res = await fetch('/api/notifications');
-      if (!res.ok) return;
-      const remote: Notification[] = await res.json();
-      const welcome = getOrCreateWelcomeNotification();
-      const local = getLocalNotifications();
-      const remoteIds = new Set(remote.map(n => n.id));
-      const seen = new Set<number>();
-      const extras = [...serverUserMsgs, ...welcome, ...local, ...adminMsgs].filter(w => {
-        if (remoteIds.has(w.id) || seen.has(w.id)) return false;
-        seen.add(w.id);
-        return true;
-      });
-      const dismissed = getDismissedIds();
-      const merged = [...extras, ...remote]
-        .filter(n => !dismissed.has(n.id))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setNotifications(merged.slice(0, 50));
-    } catch {
-      const welcome = getOrCreateWelcomeNotification();
-      const local = getLocalNotifications();
-      setNotifications([...serverUserMsgs, ...welcome, ...local, ...adminMsgs]);
-    }
-  }, []);
-
-  usePollingCallback(fetchNotifications, 8 * 1000);
+  const { data: notifications = getOrCreateWelcomeNotification() } = useQuery({
+    queryKey: ['user-notifications', user?.id],
+    queryFn: () => fetchNotificationsData(user?.id),
+    refetchInterval: 8_000,
+    staleTime: 0,
+  });
 
   useEffect(() => {
     const interval = setInterval(() => {
       const local = getLocalNotifications();
-      if (local.length === 0) return;
-      setNotifications(prev => {
-        const existingIds = new Set(prev.map(n => n.id));
-        const newOnes = local.filter(n => !existingIds.has(n.id));
-        if (newOnes.length === 0) return prev;
-        return [...newOnes, ...prev].slice(0, 50);
-      });
+      if (local.length > 0) {
+        void queryClient.invalidateQueries({ queryKey: ['user-notifications', user?.id] });
+      }
     }, 8_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [queryClient, user?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -263,7 +252,7 @@ export function NotificationsPanel() {
       const allIds = notifications.map(n => n.id);
       markRead(allIds);
       setReadIds(new Set(allIds));
-      fetchNotifications();
+      void queryClient.invalidateQueries({ queryKey: ['user-notifications', user?.id] });
       const walletId = user?.id ?? localStorage.getItem('syp-wallet-id');
       if (walletId) {
         for (const n of notifications) {
@@ -285,7 +274,7 @@ export function NotificationsPanel() {
     markRead(allIds);
     localStorage.removeItem(LOCAL_KEY);
     setReadIds(new Set(allIds));
-    setNotifications([]);
+    queryClient.setQueryData<Notification[]>(['user-notifications', user?.id], []);
     const walletId = user?.id ?? localStorage.getItem('syp-wallet-id');
     if (walletId) {
       try {
