@@ -535,7 +535,7 @@ function LocalMarketSection() {
                                     </div>
                                     <p className="text-white/60 text-xs mt-1 truncate">{p.productNameAr}</p>
                                     <div className="flex items-baseline gap-2">
-                                      <span className="text-white font-bold text-2xl">{formatNum(mainPrice, { decimals: 0 })}</span>
+                                      <span className="text-white font-bold text-2xl tabular-nums" style={{ fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"' }}>{formatNum(mainPrice, { decimals: 0 })}</span>
                                       <span className="text-white/60 text-sm">ل.س</span>
                                     </div>
                                   </div>
@@ -583,7 +583,7 @@ function LocalMarketSection() {
                                 <div className="flex items-center gap-2">
                                   <div className="text-right">
                                     <p className="text-white/60 text-xs">{p.productNameAr}</p>
-                                    <p className="font-bold text-base text-white">{formatNum(mainPrice, { decimals: 0 })}<span className="text-xs font-normal text-white/60"> ل.س</span></p>
+                                    <p className="font-bold text-base text-white tabular-nums" style={{ fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"' }}>{formatNum(mainPrice, { decimals: 0 })}<span className="text-xs font-normal text-white/60"> ل.س</span></p>
                                   </div>
                                   <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
                                     style={{ background: 'rgba(255,255,255,0.12)' }}>
@@ -1013,7 +1013,7 @@ export default function HomePage() {
       {/* Exchange Rates */}
       <section>
         <div className="flex items-center gap-3 mb-4" style={{ marginBottom: '0.5rem' }}>
-          <div className="flex-1 h-[2.5px] rounded-full" style={{ background: 'linear-gradient(90deg, #D20073 0%, #ff3d8f 60%, transparent 100%)' }} />
+          <div className="flex-1 h-[2.5px] rounded-full" style={{ background: '#D20073' }} />
         </div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-bold flex items-center gap-2">

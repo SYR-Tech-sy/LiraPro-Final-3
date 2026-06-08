@@ -73,17 +73,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (event === 'SIGNED_IN') {
+        // Skip state update if same user is already signed in (prevents tab-focus re-renders)
+        setSession(prev => {
+          if (prev?.user?.id === newSession?.user?.id && prev?.access_token === newSession?.access_token) return prev;
+          return newSession;
+        });
+        setUser(prev => {
+          if (prev?.id === (newSession?.user?.id ?? null)) return prev;
+          return newSession?.user ?? null;
+        });
+        setIsLoaded(true);
+        if (newSession?.user) {
+          void syncProfileToSupabase(
+            newSession.user.id,
+            newSession.user.email ?? '',
+            newSession.access_token
+          );
+        }
+        return;
+      }
+
       setSession(newSession);
       setUser(newSession?.user ?? null);
       setIsLoaded(true);
-
-      if (event === 'SIGNED_IN' && newSession?.user) {
-        void syncProfileToSupabase(
-          newSession.user.id,
-          newSession.user.email ?? '',
-          newSession.access_token
-        );
-      }
     });
 
     return () => subscription.unsubscribe();

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useApp } from '@/context/app-context';
 import { useGetExchangeRates } from '@workspace/api-client-react';
 import { LiveBadge } from '@/components/live-badge';
+import { useUser } from '@/context/auth-context';
 
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis, CartesianGrid } from 'recharts';
 
@@ -93,19 +94,18 @@ function CryptoDetailModal({
   const sellPrice = getSellRate(priceSYP);
   const nameAr = CRYPTO_NAMES_AR[coin.id] ?? coin.name;
 
-  const handleSaveAlert = () => {
+  const { getToken } = useUser();
+
+  const handleSaveAlert = async () => {
     if (!alertTarget) return;
-    const alerts = JSON.parse(localStorage.getItem('syp-crypto-alerts') ?? '[]');
-    alerts.push({
-      id: Date.now(),
-      coinId: coin.id,
-      symbol: coin.symbol,
-      name: nameAr,
-      type: alertType,
-      target: parseFloat(alertTarget),
-      created: new Date().toISOString(),
-    });
-    localStorage.setItem('syp-crypto-alerts', JSON.stringify(alerts));
+    try {
+      const tok = await getToken();
+      await fetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ code: coin.id, nameAr, type: alertType, targetPrice: parseFloat(alertTarget) }),
+      });
+    } catch { /* ignore */ }
     setAlertSaved(true);
     setTimeout(onClose, 1500);
   };

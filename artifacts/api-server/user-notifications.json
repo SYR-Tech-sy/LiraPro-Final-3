@@ -190,7 +190,20 @@
     }
   ],
   "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84": [],
-  "8751d349-9ed6-42d8-8e81-d54adf2eb210": [],
+  "8751d349-9ed6-42d8-8e81-d54adf2eb210": [
+    {
+      "id": 1780912957702,
+      "title": "تم قبول طلب التوثيق ✓",
+      "body": "تهانينا نضال حسين! تم قبول طلب توثيق حسابك. ستظهر علامة التوثيق بجانب اسمك الآن.",
+      "type": "success",
+      "icon": "admin",
+      "sender": "LiraPro",
+      "recipient": "specific",
+      "targetWalletId": "8751d349-9ed6-42d8-8e81-d54adf2eb210",
+      "createdAt": "2026-06-08T10:02:37.702Z",
+      "read": true
+    }
+  ],
   "test-uid-123": [
     {
       "id": 1780682011429,

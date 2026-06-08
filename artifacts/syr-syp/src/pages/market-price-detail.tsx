@@ -164,22 +164,22 @@ function AlertModal({ onClose, productName, currentPrice, currentBuy, currentSel
   t: (k: string) => string;
   formatNum: (v: number, o?: { decimals?: number }) => string;
 }) {
+  const { getToken } = useUser();
   const hasBuySell = currentBuy !== null && currentSell !== null;
   const [alertType, setAlertType] = useState<'buy' | 'sell' | 'price'>(hasBuySell ? 'buy' : 'price');
   const [targetPrice, setTargetPrice] = useState('');
   const [saved, setSaved] = useState(false);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!targetPrice) return;
-    const alerts = JSON.parse(localStorage.getItem('syp-alerts') || '[]');
-    alerts.push({
-      id: Date.now(),
-      code: productName,
-      type: alertType,
-      target: parseFloat(targetPrice),
-      created: new Date().toISOString(),
-    });
-    localStorage.setItem('syp-alerts', JSON.stringify(alerts));
+    try {
+      const tok = await getToken();
+      await fetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ code: productName, nameAr: productName, type: alertType === 'price' ? 'buy' : alertType, targetPrice: parseFloat(targetPrice) }),
+      });
+    } catch { /* ignore */ }
     setSaved(true);
     setTimeout(onClose, 1500);
   };
@@ -269,7 +269,7 @@ function AlertModal({ onClose, productName, currentPrice, currentBuy, currentSel
                 className="mb-4 h-12 text-lg" dir="ltr" />
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={onClose}>إلغاء</Button>
-                <Button onClick={handleCreate} className="flex-1" disabled={!targetPrice}>
+                <Button onClick={() => void handleCreate()} className="flex-1" disabled={!targetPrice}>
                   <Bell className="w-4 h-4 ml-2" /> {t('createAlert')}
                 </Button>
               </div>

@@ -442,6 +442,7 @@ export default function ProfilePage() {
       onSuccess: () => {
         toast.success("تم حفظ بياناتك بنجاح");
         refetch();
+        void queryClient.invalidateQueries({ queryKey: ['greeting-profile'] });
         setCardMode('view');
       },
       onError: () => { toast.error("حدث خطأ أثناء حفظ البيانات، حاول مرة أخرى"); }

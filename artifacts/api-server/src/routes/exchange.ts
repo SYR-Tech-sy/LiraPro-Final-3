@@ -14,6 +14,20 @@ const FALLBACK_RATES: Record<string, number> = {
   USD: 1, SYP: 13500, EUR: 0.92, TRY: 38, GBP: 0.79,
   AED: 3.67, SAR: 3.75, EGP: 50, IQD: 1310, JOD: 0.71,
   KWD: 0.31, BHD: 0.38, QAR: 3.64, OMR: 0.38, LBP: 89500,
+  // Arab world
+  TND: 3.11, MAD: 10.05, DZD: 135, LYD: 4.87, SDG: 601, YER: 250,
+  // Asia-Pacific
+  JPY: 157, KRW: 1380, CNY: 7.25, INR: 83.5, PKR: 278, BDT: 110,
+  IDR: 16200, MYR: 4.72, THB: 36.5, SGD: 1.35, HKD: 7.82, TWD: 32.3,
+  // Americas & Oceania
+  CAD: 1.37, AUD: 1.54, NZD: 1.63, BRL: 5.15, MXN: 17.2, ARS: 870,
+  // Europe
+  CHF: 0.91, NOK: 10.7, SEK: 10.6, DKK: 6.89, PLN: 4.02,
+  CZK: 23.1, HUF: 360, RON: 4.58, UAH: 38.5, RUB: 90,
+  // CIS & Caucasus
+  GEL: 2.69, AZN: 1.70, AMD: 388, KZT: 447, UZS: 12700,
+  // Africa
+  NGN: 1580, ZAR: 18.7,
 };
 
 async function fetchRates(sypRate: number): Promise<{ rates: Record<string, number>; rawSypRate: number }> {

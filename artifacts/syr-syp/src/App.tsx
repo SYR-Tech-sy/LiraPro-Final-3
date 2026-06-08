@@ -149,6 +149,7 @@ function GreetingBar() {
       return res.json() as Promise<{ firstName?: string }>;
     },
     enabled: !!isSignedIn,
+    staleTime: 0,
   });
   const profileFirstName = profileData?.firstName ?? '';
 
