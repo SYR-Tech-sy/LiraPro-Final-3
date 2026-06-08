@@ -113,19 +113,31 @@ export function useAlertChecker(rates: Record<string, number> | undefined) {
       .then(triggered => {
         if (triggered.length === 0) return;
         queryClient.invalidateQueries({ queryKey: ['getAlerts'] });
+        const now = Date.now();
         for (const alert of triggered) {
-          playAlertChime();
           const direction = alert.type === 'buy' ? '🔽' : '🔼';
           const title = `${direction} تنبيه سعر: ${alert.code}`;
           const body = `وصل سعر ${alert.nameAr ?? alert.code} إلى ${alert.targetPrice.toLocaleString('ar-SY')} ل.س — السعر المستهدف تحقّق!`;
           addLocalNotification({
-            id: Date.now() + alert.id,
+            id: now + alert.id,
             title,
             body,
             type: 'price',
             icon: 'trending',
             createdAt: new Date().toISOString(),
           });
+        }
+        playAlertChime();
+        if (triggered.length === 1) {
+          const alert = triggered[0];
+          const direction = alert.type === 'buy' ? '🔽' : '🔼';
+          const title = `${direction} تنبيه سعر: ${alert.code}`;
+          const body = `وصل سعر ${alert.nameAr ?? alert.code} إلى ${alert.targetPrice.toLocaleString('ar-SY')} ل.س — السعر المستهدف تحقّق!`;
+          document.dispatchEvent(new CustomEvent('syp-notification', { detail: { title, body, type: 'price' } }));
+        } else {
+          const title = `🔔 ${triggered.length} تنبيهات أسعار`;
+          const codes = triggered.map(a => a.code).join('، ');
+          const body = `تحقّقت أسعار مستهدفة لـ: ${codes}`;
           document.dispatchEvent(new CustomEvent('syp-notification', { detail: { title, body, type: 'price' } }));
         }
       })
