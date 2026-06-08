@@ -1,10 +1,61 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { sendPushToAll } from "./push.js";
 
 const router: IRouter = Router();
+
+// ── SSE Client Registry ────────────────────────────────────────────────────────
+
+interface SseClient {
+  userId: string;
+  res: Response;
+}
+
+const sseClients = new Map<string, SseClient>();
+let connCounter = 0;
+
+function broadcastSSE(event: string, data: unknown, targetUserId?: string): void {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const [, client] of sseClients) {
+    if (targetUserId && client.userId !== targetUserId) continue;
+    try { client.res.write(payload); } catch { /* connection closed */ }
+  }
+}
+
+// GET /api/notifications/stream — SSE real-time channel
+// Auth via Bearer header OR ?token= query param (EventSource compat)
+router.get("/notifications/stream", async (req, res): Promise<void> => {
+  const { verifySupabaseToken } = await import("../lib/supabase-admin.js");
+  const tokenFromHeader = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
+  const tokenFromQuery = (req.query.token as string | undefined) ?? "";
+  const token = tokenFromHeader || tokenFromQuery;
+  if (!token) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const user = await verifySupabaseToken(token);
+  if (!user) { res.status(401).json({ error: "Invalid token" }); return; }
+
+  const userId = user.id;
+  const clientId = `${userId}-${connCounter++}`;
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  res.write(`event: connected\ndata: ${JSON.stringify({ clientId })}\n\n`);
+  sseClients.set(clientId, { userId, res });
+
+  const heartbeat = setInterval(() => {
+    try { res.write(`: heartbeat\n\n`); } catch { clearInterval(heartbeat); }
+  }, 25_000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    sseClients.delete(clientId);
+  });
+});
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const NOTIFICATIONS_FILE = join(__dir, "../notifications.json");
@@ -74,6 +125,7 @@ router.post("/notifications", (req, res): void => {
   saveNotifications(notifications);
 
   req.log.info({ id: newNotification.id }, "Notification created");
+  broadcastSSE("notification", newNotification);
   res.json(newNotification);
 });
 
@@ -128,6 +180,7 @@ router.post("/notifications/user", (req, res): void => {
   all[walletId] = all[walletId].slice(0, 30);
   saveUserNotifications(all);
   req.log.info({ walletId, id: newMsg.id }, "User notification sent");
+  broadcastSSE("notification", newMsg, walletId);
   res.json(newMsg);
 });
 
@@ -286,8 +339,8 @@ router.post("/broadcast", (req, res): void => {
       endsAt: new Date(Date.now() + countdown * 1000).toISOString(),
     } : {}),
   };
-  // Send web push notification to all subscribed devices
   void sendPushToAll("🔴 بث مباشر — LiraPro", text.trim(), "/app/home").catch(() => {});
+  broadcastSSE("broadcast", activeBroadcast);
   res.json(activeBroadcast);
 });
 
@@ -296,6 +349,7 @@ router.delete("/broadcast", (req, res): void => {
   const token = req.headers["x-admin-token"] as string;
   if (!token || token !== ADMIN_TOKEN) { res.status(403).json({ error: "Unauthorized" }); return; }
   activeBroadcast = null;
+  broadcastSSE("broadcast_end", {});
   res.json({ success: true });
 });
 

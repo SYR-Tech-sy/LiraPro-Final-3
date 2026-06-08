@@ -25,6 +25,7 @@ import supportTicketsRouter from "./support-tickets";
 import avatarRouter from "./avatar";
 import downloadRouter from "./download";
 import pushRouter from "./push";
+import sessionsRouter from "./sessions";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,8 @@ router.use(downloadRouter);
 
 // Web Push notifications
 router.use(pushRouter);
+
+// Session management (DB-backed)
+router.use(sessionsRouter);
 
 export default router;

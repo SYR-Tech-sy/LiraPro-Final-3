@@ -1,5 +1,10 @@
 import { Router } from "express";
 import webpush from "web-push";
+import { db } from "@workspace/db";
+import { pushSubscriptionsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import { requireSupabaseAuth } from "../middlewares/requireSupabaseAuth.js";
 
 const router = Router();
 
@@ -15,60 +20,163 @@ const VAPID_PRIVATE_KEY =
 
 webpush.setVapidDetails("mailto:admin@lirapro.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
-interface StoredSub {
+interface SubBody {
   endpoint: string;
   keys: { auth: string; p256dh: string };
 }
-
-let subscriptions: StoredSub[] = [];
 
 // GET /api/push/vapid-public-key
 router.get("/push/vapid-public-key", (_req, res): void => {
   res.json({ publicKey: VAPID_PUBLIC_KEY });
 });
 
-// POST /api/push/subscribe
-router.post("/push/subscribe", (req, res): void => {
-  const sub = req.body as StoredSub;
+// POST /api/push/subscribe — authenticated, stores per-user subscription in DB
+router.post("/push/subscribe", requireSupabaseAuth, async (req, res): Promise<void> => {
+  const sub = req.body as SubBody;
   if (!sub?.endpoint || !sub?.keys?.auth || !sub?.keys?.p256dh) {
     res.status(400).json({ error: "Invalid subscription" });
     return;
   }
-  if (!subscriptions.some((s) => s.endpoint === sub.endpoint)) {
-    subscriptions.push(sub);
+  const userId = req.supabaseUserId!;
+  const ua = (req.headers["user-agent"] ?? "").slice(0, 400);
+
+  try {
+    await db
+      .insert(pushSubscriptionsTable)
+      .values({
+        id: randomUUID(),
+        userId,
+        endpoint: sub.endpoint,
+        p256dh: sub.keys.p256dh,
+        auth: sub.keys.auth,
+        userAgent: ua,
+        lastUsedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: pushSubscriptionsTable.endpoint,
+        set: {
+          userId,
+          p256dh: sub.keys.p256dh,
+          auth: sub.keys.auth,
+          userAgent: ua,
+          lastUsedAt: new Date(),
+        },
+      });
+
+    const rows = await db
+      .select()
+      .from(pushSubscriptionsTable)
+      .where(eq(pushSubscriptionsTable.userId, userId));
+
+    res.json({ success: true, count: rows.length });
+  } catch (err) {
+    req.log.error(err, "push/subscribe DB error");
+    res.status(500).json({ error: "Failed to save subscription" });
   }
-  res.json({ success: true, count: subscriptions.length });
 });
 
-// DELETE /api/push/subscribe
-router.delete("/push/subscribe", (req, res): void => {
+// DELETE /api/push/subscribe — authenticated
+router.delete("/push/subscribe", requireSupabaseAuth, async (req, res): Promise<void> => {
   const { endpoint } = req.body as { endpoint?: string };
-  if (endpoint) subscriptions = subscriptions.filter((s) => s.endpoint !== endpoint);
+  if (endpoint) {
+    try {
+      await db
+        .delete(pushSubscriptionsTable)
+        .where(eq(pushSubscriptionsTable.endpoint, endpoint));
+    } catch (err) {
+      req.log.error(err, "push/unsubscribe DB error");
+    }
+  }
   res.json({ success: true });
 });
 
 // GET /api/push/subscribers-count — admin only
-router.get("/push/subscribers-count", (req, res): void => {
+router.get("/push/subscribers-count", async (req, res): Promise<void> => {
   const token = req.headers["x-admin-token"] as string;
-  if (!token || token !== ADMIN_TOKEN) { res.status(403).json({ error: "Unauthorized" }); return; }
-  res.json({ count: subscriptions.length });
+  if (!token || token !== ADMIN_TOKEN) {
+    res.status(403).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    const rows = await db.select().from(pushSubscriptionsTable);
+    res.json({ count: rows.length });
+  } catch {
+    res.json({ count: 0 });
+  }
 });
 
 export async function sendPushToAll(title: string, body: string, url = "/app/home"): Promise<void> {
-  if (subscriptions.length === 0) return;
+  let subs: typeof pushSubscriptionsTable.$inferSelect[];
+  try {
+    subs = await db.select().from(pushSubscriptionsTable);
+  } catch {
+    return;
+  }
+  if (subs.length === 0) return;
+
   const payload = JSON.stringify({ title, body, url });
   const failed: string[] = [];
+
   await Promise.all(
-    subscriptions.map(async (sub) => {
+    subs.map(async (sub) => {
       try {
-        await webpush.sendNotification(sub as webpush.PushSubscription, payload);
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { auth: sub.auth, p256dh: sub.p256dh } } as webpush.PushSubscription,
+          payload,
+        );
+        await db
+          .update(pushSubscriptionsTable)
+          .set({ lastUsedAt: new Date() })
+          .where(eq(pushSubscriptionsTable.endpoint, sub.endpoint));
       } catch {
         failed.push(sub.endpoint);
       }
-    })
+    }),
   );
+
   if (failed.length > 0) {
-    subscriptions = subscriptions.filter((s) => !failed.includes(s.endpoint));
+    await Promise.all(
+      failed.map((endpoint) =>
+        db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.endpoint, endpoint)),
+      ),
+    ).catch(() => {});
+  }
+}
+
+export async function sendPushToUser(userId: string, title: string, body: string, url = "/app/home"): Promise<void> {
+  let subs: typeof pushSubscriptionsTable.$inferSelect[];
+  try {
+    subs = await db
+      .select()
+      .from(pushSubscriptionsTable)
+      .where(eq(pushSubscriptionsTable.userId, userId));
+  } catch {
+    return;
+  }
+  if (subs.length === 0) return;
+
+  const payload = JSON.stringify({ title, body, url });
+  const failed: string[] = [];
+
+  await Promise.all(
+    subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { auth: sub.auth, p256dh: sub.p256dh } } as webpush.PushSubscription,
+          payload,
+        );
+      } catch {
+        failed.push(sub.endpoint);
+      }
+    }),
+  );
+
+  if (failed.length > 0) {
+    await Promise.all(
+      failed.map((endpoint) =>
+        db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.endpoint, endpoint)),
+      ),
+    ).catch(() => {});
   }
 }
 

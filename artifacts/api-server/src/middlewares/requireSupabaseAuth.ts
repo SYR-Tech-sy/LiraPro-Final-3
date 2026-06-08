@@ -32,13 +32,13 @@ export async function requireSupabaseAuth(
   req.supabaseUserId = user.id;
   req.supabaseUserEmail = user.email ?? "";
 
-  // Track session: IP + user-agent for admin device info display
+  // Fire-and-forget: track session in DB (non-blocking)
   const ip =
     (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
     req.socket?.remoteAddress ||
     "";
   const ua = req.headers["user-agent"] ?? "";
-  trackSession(user.id, ip, ua);
+  void trackSession(user.id, ip, ua);
 
   next();
 }

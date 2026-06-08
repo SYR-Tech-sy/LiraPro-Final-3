@@ -1,29 +1,16 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dir = dirname(fileURLToPath(import.meta.url));
-const SESSIONS_FILE = join(__dir, "../sessions.json");
+import { db } from "@workspace/db";
+import { userSessionsTable } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
 
 export interface SessionInfo {
+  id: string;
   userId: string;
   ip: string;
   userAgent: string;
   deviceName: string;
+  deviceType: string;
   lastSeenAt: string;
-}
-
-function readSessions(): Record<string, SessionInfo> {
-  try {
-    if (!existsSync(SESSIONS_FILE)) return {};
-    return JSON.parse(readFileSync(SESSIONS_FILE, "utf-8")) as Record<string, SessionInfo>;
-  } catch { return {}; }
-}
-
-function saveSessions(data: Record<string, SessionInfo>): void {
-  try {
-    writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2), "utf-8");
-  } catch {}
+  createdAt: string;
 }
 
 function parseDeviceName(ua: string): string {
@@ -47,24 +34,97 @@ function parseDeviceName(ua: string): string {
   return "متصفح";
 }
 
-export function trackSession(userId: string, ip: string, userAgent: string): void {
+function parseDeviceType(ua: string): string {
+  if (/ipad|tablet|kindle/i.test(ua)) return "tablet";
+  if (/iphone|android.*mobile|blackberry|windows phone/i.test(ua)) return "phone";
+  return "desktop";
+}
+
+/**
+ * Derive a stable session ID from userId + fingerprint of the user-agent.
+ * One row per (user, browser-family) combination.
+ */
+export function makeSessionId(userId: string, ua: string): string {
+  const key = `${userId}::${ua.slice(0, 80)}`;
+  let hash = 5381;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash) ^ key.charCodeAt(i);
+    hash = hash >>> 0;
+  }
+  return `sess-${userId.slice(0, 8)}-${hash.toString(16)}`;
+}
+
+export async function trackSession(userId: string, ip: string, userAgent: string): Promise<void> {
   try {
-    const sessions = readSessions();
-    sessions[userId] = {
-      userId,
-      ip: ip || "غير متاح",
-      userAgent: (userAgent || "").slice(0, 300),
-      deviceName: parseDeviceName(userAgent),
-      lastSeenAt: new Date().toISOString(),
-    };
-    saveSessions(sessions);
+    const sessionId = makeSessionId(userId, userAgent);
+    await db
+      .insert(userSessionsTable)
+      .values({
+        id: sessionId,
+        userId,
+        ip: (ip || "").slice(0, 100),
+        userAgent: (userAgent || "").slice(0, 400),
+        deviceName: parseDeviceName(userAgent),
+        deviceType: parseDeviceType(userAgent),
+        lastSeenAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: userSessionsTable.id,
+        set: {
+          ip: (ip || "").slice(0, 100),
+          lastSeenAt: new Date(),
+        },
+      });
+  } catch {
+    // Non-critical — never throw
+  }
+}
+
+export async function getUserSessions(userId: string): Promise<SessionInfo[]> {
+  try {
+    const rows = await db
+      .select()
+      .from(userSessionsTable)
+      .where(eq(userSessionsTable.userId, userId))
+      .orderBy(desc(userSessionsTable.lastSeenAt));
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      ip: r.ip,
+      userAgent: r.userAgent,
+      deviceName: r.deviceName,
+      deviceType: r.deviceType,
+      lastSeenAt: r.lastSeenAt.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  try {
+    await db.delete(userSessionsTable).where(eq(userSessionsTable.id, sessionId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteAllOtherSessions(userId: string, keepSessionId: string): Promise<void> {
+  try {
+    const rows = await db
+      .select()
+      .from(userSessionsTable)
+      .where(eq(userSessionsTable.userId, userId));
+    await Promise.all(
+      rows
+        .filter((r) => r.id !== keepSessionId)
+        .map((r) => db.delete(userSessionsTable).where(eq(userSessionsTable.id, r.id))),
+    );
   } catch {}
 }
 
-export function getUserSession(userId: string): SessionInfo | null {
-  return readSessions()[userId] ?? null;
-}
-
-export function getAllSessions(): Record<string, SessionInfo> {
-  return readSessions();
-}
+// Backwards-compat stubs (used nowhere critical but kept for type safety)
+export function getUserSession(_userId: string): SessionInfo | null { return null; }
+export function getAllSessions(): Record<string, SessionInfo> { return {}; }

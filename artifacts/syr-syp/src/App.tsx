@@ -1121,6 +1121,7 @@ function AppRoutes() {
     <QueryClientProvider client={queryClient}>
       <AuthSetup />
       <AuthCacheClearer />
+      <AppSideEffects />
       <BanGuard>
         <Switch>
           <Route path="/" component={HomeRedirect} />
@@ -1179,40 +1180,95 @@ function AppRoutes() {
   );
 }
 
-function usePushSubscription() {
+function AppSideEffects() {
+  const { isSignedIn } = useUser();
+  const { getToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Push notification subscription (only when signed in — server requires auth)
   useEffect(() => {
+    if (!isSignedIn) return;
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     (async () => {
       try {
+        const tok = await getToken();
+        if (!tok) return;
         const reg = await navigator.serviceWorker.register('/sw.js');
-        // Fetch public VAPID key
         const keyRes = await fetch('/api/push/vapid-public-key');
         if (!keyRes.ok) return;
         const { publicKey } = await keyRes.json() as { publicKey: string };
-        // Check existing subscription
         let sub = await reg.pushManager.getSubscription();
         if (!sub) {
-          // Subscribe
           const keyBytes = Uint8Array.from(atob(publicKey.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-          sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: keyBytes,
-          });
+          sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes });
         }
-        // Register with our server
         await fetch('/api/push/subscribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
           body: JSON.stringify(sub.toJSON()),
         });
-      } catch { /* silent — notifications not supported or denied */ }
+      } catch { /* silent */ }
     })();
-  }, []);
+  }, [isSignedIn, getToken]);
+
+  // SSE real-time notification stream
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let es: EventSource | null = null;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+    let retries = 0;
+    let unmounted = false;
+
+    async function connect() {
+      try {
+        const tok = await getToken();
+        if (!tok || unmounted) return;
+        es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(tok)}`);
+
+        es.addEventListener('notification', (e) => {
+          try {
+            const data = JSON.parse((e as MessageEvent).data) as { title?: string; body?: string };
+            void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+            if (data.title) {
+              document.dispatchEvent(new CustomEvent('syp-notification', { detail: data }));
+            }
+          } catch {}
+        });
+
+        es.addEventListener('broadcast', () => {
+          void queryClient.invalidateQueries({ queryKey: ['broadcast'] });
+        });
+
+        es.addEventListener('broadcast_end', () => {
+          void queryClient.invalidateQueries({ queryKey: ['broadcast'] });
+        });
+
+        es.onerror = () => {
+          es?.close();
+          es = null;
+          if (!unmounted) {
+            const delay = Math.min(1000 * 2 ** retries, 30_000);
+            retries++;
+            retryTimeout = setTimeout(() => { void connect(); }, delay);
+          }
+        };
+
+        es.addEventListener('connected', () => { retries = 0; });
+      } catch {}
+    }
+
+    void connect();
+    return () => {
+      unmounted = true;
+      if (retryTimeout) clearTimeout(retryTimeout);
+      es?.close();
+    };
+  }, [isSignedIn, getToken, queryClient]);
+
+  return null;
 }
 
 function App() {
-  usePushSubscription();
-
   useEffect(() => {
     fetch('/api/visit', { method: 'POST' }).catch(() => {});
   }, []);

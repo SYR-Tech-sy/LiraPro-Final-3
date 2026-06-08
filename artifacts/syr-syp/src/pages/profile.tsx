@@ -194,9 +194,29 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const { data: sessions = [] } = useQuery({
     queryKey: ['sessions', user?.id],
-    queryFn: () => user?.id ? ensureCurrentSession(user.id) : [],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      try {
+        const tok = await getToken();
+        if (!tok) return ensureCurrentSession(user.id);
+        const res = await fetch('/api/sessions', { headers: { Authorization: `Bearer ${tok}` } });
+        if (!res.ok) return ensureCurrentSession(user.id);
+        const data = await res.json() as Array<{ id: string; deviceName: string; deviceType: string; lastSeenAt: string; createdAt: string; isCurrent: boolean }>;
+        return data.map(s => ({
+          id: s.id,
+          deviceName: s.deviceName,
+          deviceType: s.deviceType,
+          deviceIcon: (s.deviceType === 'phone' ? 'phone' : s.deviceType === 'tablet' ? 'tablet' : 'desktop') as 'phone' | 'tablet' | 'desktop',
+          startedAt: s.createdAt,
+          isCurrent: s.isCurrent,
+        }));
+      } catch {
+        return ensureCurrentSession(user.id);
+      }
+    },
     enabled: !!user?.id,
-    staleTime: 0,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
   const [showSessions, setShowSessions] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -210,13 +230,21 @@ export default function ProfilePage() {
   const scanCanvasRef = useRef<HTMLCanvasElement>(null);
   const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const removeSession = useCallback((sessionId: string) => {
+  const removeSession = useCallback(async (sessionId: string) => {
     if (!user?.id) return;
-    const updated = getSessions(user.id).filter(s => s.id !== sessionId);
-    saveSessions(user.id, updated);
-    queryClient.setQueryData<StoredSession[]>(['sessions', user.id],
-      updated.map(s => s.id === 'sess-current-' + user.id ? { ...s, isCurrent: true } : s));
-  }, [user?.id, queryClient]);
+    // Optimistic update
+    queryClient.setQueryData<StoredSession[]>(['sessions', user.id], prev => (prev ?? []).filter(s => s.id !== sessionId));
+    try {
+      const tok = await getToken();
+      if (tok) {
+        await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${tok}` },
+        });
+      }
+    } catch {}
+    void queryClient.invalidateQueries({ queryKey: ['sessions', user.id] });
+  }, [user?.id, queryClient, getToken]);
 
   const stopScanner = useCallback(() => {
     if (scanIntervalRef.current) { clearInterval(scanIntervalRef.current); scanIntervalRef.current = null; }
@@ -955,9 +983,17 @@ export default function ProfilePage() {
                   const hasOthers = otherSessions.length > 0;
                   return (
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (!user?.id || !hasOthers) return;
-                        otherSessions.forEach(s => removeSession(s.id));
+                        // Optimistic update
+                        queryClient.setQueryData<StoredSession[]>(['sessions', user.id], prev => (prev ?? []).filter(s => s.isCurrent));
+                        try {
+                          const tok = await getToken();
+                          if (tok) {
+                            await fetch('/api/sessions', { method: 'DELETE', headers: { Authorization: `Bearer ${tok}` } });
+                          }
+                        } catch {}
+                        void queryClient.invalidateQueries({ queryKey: ['sessions', user.id] });
                       }}
                       disabled={!hasOthers}
                       className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold border transition-colors ${
