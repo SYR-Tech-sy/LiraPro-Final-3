@@ -6,6 +6,7 @@ import { useCheckAlerts } from '@workspace/api-client-react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useAuth, useUser } from '@/context/auth-context';
 import { useToast } from '@/hooks/use-toast';
+import { playAlertChime } from '@/hooks/use-alert-sound';
 
 interface Notification {
   id: number;
@@ -113,6 +114,7 @@ export function useAlertChecker(rates: Record<string, number> | undefined) {
         if (triggered.length === 0) return;
         queryClient.invalidateQueries({ queryKey: ['getAlerts'] });
         for (const alert of triggered) {
+          playAlertChime();
           const direction = alert.type === 'buy' ? '🔽' : '🔼';
           const title = `${direction} تنبيه سعر: ${alert.code}`;
           const body = `وصل سعر ${alert.nameAr ?? alert.code} إلى ${alert.targetPrice.toLocaleString('ar-SY')} ل.س — السعر المستهدف تحقّق!`;

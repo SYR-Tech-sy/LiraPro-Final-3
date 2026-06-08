@@ -4,10 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '@/context/app-context';
 import { useTheme } from 'next-themes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Globe, Hash, Moon, Sun, Lock, X, Eye, EyeOff, Bell, TrendingUp, MessageCircle, CheckCircle, MapPin, Store, Newspaper } from 'lucide-react';
+import { Globe, Hash, Moon, Sun, Lock, X, Eye, EyeOff, Bell, TrendingUp, MessageCircle, CheckCircle, MapPin, Store, Newspaper, Volume2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useUser, useAuth } from '@/context/auth-context';
+import { getAlertSoundEnabled, setAlertSoundEnabled } from '@/hooks/use-alert-sound';
 
 const NOTIF_PREFS_LIST = [
   { id: 'prices',       labelAr: 'تنبيهات الأسعار',            Icon: TrendingUp },
@@ -34,6 +35,13 @@ export default function SettingsPage() {
     const next = { ...notifPrefs, [id]: notifPrefs[id] === false ? true : !(notifPrefs[id] ?? true) };
     setNotifPrefs(next);
     localStorage.setItem('syp-notif-prefs', JSON.stringify(next));
+  };
+
+  const [soundEnabled, setSoundEnabled] = useState(() => getAlertSoundEnabled());
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    setAlertSoundEnabled(next);
   };
 
   const [pwModal, setPwModal] = useState(false);
@@ -229,12 +237,12 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-0 px-4 pb-2">
-          {NOTIF_PREFS_LIST.map((pref, i) => {
+          {NOTIF_PREFS_LIST.map((pref) => {
             const isOn = notifPrefs[pref.id] !== false;
             return (
               <div
                 key={pref.id}
-                className={`flex items-center justify-between py-3 ${i < NOTIF_PREFS_LIST.length - 1 ? 'border-b border-border/50' : ''}`}
+                className="flex items-center justify-between py-3 border-b border-border/50"
               >
                 <div className="flex items-center gap-2.5 flex-1 min-w-0">
                   <pref.Icon className="w-4 h-4 text-primary flex-shrink-0" />
@@ -253,6 +261,24 @@ export default function SettingsPage() {
               </div>
             );
           })}
+          <div className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <Volume2 className="w-4 h-4 text-primary flex-shrink-0" />
+              <span className="text-sm font-medium truncate">
+                {ar ? 'صوت تنبيهات الأسعار' : 'Price alert sound'}
+              </span>
+            </div>
+            <button
+              onClick={toggleSound}
+              className={`relative w-11 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${soundEnabled ? 'bg-primary' : 'bg-border'}`}
+            >
+              <motion.div
+                className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm"
+                animate={{ left: soundEnabled ? '1.375rem' : '0.125rem' }}
+                transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+              />
+            </button>
+          </div>
         </CardContent>
       </Card>
 
