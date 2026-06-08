@@ -10,5 +10,41 @@
       "walletId": "test-wallet-id",
       "viewedAt": "2026-05-27T16:01:43.696Z"
     }
+  ],
+  "1780939398668": [
+    {
+      "walletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "viewedAt": "2026-06-08T18:42:14.068Z"
+    }
+  ],
+  "1780939882559": [
+    {
+      "walletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "viewedAt": "2026-06-08T18:42:14.164Z"
+    }
+  ],
+  "1780940900744": [
+    {
+      "walletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "viewedAt": "2026-06-08T18:42:14.397Z"
+    }
+  ],
+  "1780941446600": [
+    {
+      "walletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "viewedAt": "2026-06-08T18:42:14.622Z"
+    }
+  ],
+  "1780938529331": [
+    {
+      "walletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "viewedAt": "2026-06-08T18:42:14.687Z"
+    }
+  ],
+  "1780939005931": [
+    {
+      "walletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "viewedAt": "2026-06-08T18:42:14.838Z"
+    }
   ]
 }
