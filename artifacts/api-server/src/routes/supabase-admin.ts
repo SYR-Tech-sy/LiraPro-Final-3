@@ -61,7 +61,7 @@ router.get("/admin/users", async (req, res): Promise<void> => {
       .select("*, bans(*)")
       .order("created_at", { ascending: false });
 
-    const allSessions = getAllSessions();
+    const allSessions = await getAllSessions();
     const mapped = (profiles ?? []).map((p: Record<string, unknown>) => {
       const ban = Array.isArray(p.bans) ? p.bans[0] : null;
       const now = new Date();

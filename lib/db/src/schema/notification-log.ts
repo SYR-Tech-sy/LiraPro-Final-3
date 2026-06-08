@@ -6,6 +6,7 @@ export const notificationLogTable = pgTable("notification_log", {
   title: varchar("title", { length: 255 }).notNull(),
   body: text("body").notNull(),
   type: varchar("type", { length: 50 }).notNull().default("info"),
+  icon: varchar("icon", { length: 50 }).notNull().default("bell"),
   recipientType: varchar("recipient_type", { length: 20 }).notNull().default("all"),
   targetUserId: varchar("target_user_id", { length: 255 }),
   userId: varchar("user_id", { length: 255 }),

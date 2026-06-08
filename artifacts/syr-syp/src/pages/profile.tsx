@@ -35,7 +35,7 @@ function detectBrowser(ua: string): string {
   if (/safari/i.test(ua)) return 'Safari';
   return 'Browser';
 }
-interface StoredSession { id: string; deviceName: string; deviceType: string; deviceIcon: 'phone'|'tablet'|'desktop'; startedAt: string; lastSeenAt?: string; isCurrent?: boolean; }
+interface StoredSession { id: string; deviceName: string; deviceType: string; deviceIcon: 'phone'|'tablet'|'desktop'; os?: string; browser?: string; startedAt: string; lastSeenAt?: string; isCurrent?: boolean; }
 
 function sessionTimeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -219,12 +219,14 @@ export default function ProfilePage() {
           },
         });
         if (!res.ok) return ensureCurrentSession(user.id);
-        const data = await res.json() as Array<{ id: string; deviceName: string; deviceType: string; lastSeenAt: string; createdAt: string; isCurrent: boolean }>;
+        const data = await res.json() as Array<{ id: string; deviceName: string; deviceType: string; os: string; browser: string; lastSeenAt: string; createdAt: string; isCurrent: boolean }>;
         return data.map(s => ({
           id: s.id,
           deviceName: s.deviceName,
           deviceType: s.deviceType,
           deviceIcon: (s.deviceType === 'phone' ? 'phone' : s.deviceType === 'tablet' ? 'tablet' : 'desktop') as 'phone' | 'tablet' | 'desktop',
+          os: s.os || undefined,
+          browser: s.browser || undefined,
           startedAt: s.createdAt,
           lastSeenAt: s.lastSeenAt,
           isCurrent: s.isCurrent,
@@ -987,9 +989,22 @@ export default function ProfilePage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-bold truncate">{s.deviceName}</p>
-                          <p className="text-[9px] text-muted-foreground">
-                            {s.isCurrent ? '● هذا الجهاز · ' : ''}
-                            {s.lastSeenAt ? sessionTimeAgo(s.lastSeenAt) : new Date(s.startedAt).toLocaleDateString('ar-SY')}
+                          {(s.os || s.browser) && (
+                            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                              {s.os && (
+                                <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">{s.os}</span>
+                              )}
+                              {s.browser && (
+                                <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">{s.browser}</span>
+                              )}
+                            </div>
+                          )}
+                          <p className="text-[9px] text-muted-foreground mt-0.5">
+                            {s.isCurrent ? <span className="text-primary font-semibold">● هذا الجهاز</span> : null}
+                            {!s.isCurrent && s.lastSeenAt ? `آخر نشاط: ${sessionTimeAgo(s.lastSeenAt)}` : null}
+                            {s.startedAt && (
+                              <span className="opacity-60">{s.isCurrent ? ` · ` : ''}{`دخل: ${new Date(s.startedAt).toLocaleDateString('ar-SY')}`}</span>
+                            )}
                           </p>
                         </div>
                         {!s.isCurrent && (

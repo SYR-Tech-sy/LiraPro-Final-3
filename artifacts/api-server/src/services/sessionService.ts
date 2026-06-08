@@ -9,8 +9,11 @@ export interface SessionInfo {
   userAgent: string;
   deviceName: string;
   deviceType: string;
+  os: string;
+  browser: string;
   lastSeenAt: string;
   createdAt: string;
+  isCurrent?: boolean;
 }
 
 function parseDeviceName(ua: string): string {
@@ -40,26 +43,52 @@ function parseDeviceType(ua: string): string {
   return "desktop";
 }
 
+function parseOs(ua: string): string {
+  if (/iPhone|iPad/i.test(ua)) return "iOS";
+  if (/Android/i.test(ua)) return "Android";
+  if (/Windows/i.test(ua)) return "Windows";
+  if (/Macintosh|Mac OS/i.test(ua)) return "macOS";
+  if (/Linux/i.test(ua)) return "Linux";
+  if (!ua) return "";
+  return "Other";
+}
+
+function parseBrowser(ua: string): string {
+  if (!ua) return "";
+  if (/Edg\//i.test(ua)) return "Edge";
+  if (/OPR|Opera/i.test(ua)) return "Opera";
+  if (/Chrome/i.test(ua)) return "Chrome";
+  if (/Firefox/i.test(ua)) return "Firefox";
+  if (/Safari/i.test(ua)) return "Safari";
+  return "Browser";
+}
+
 /**
- * Derive a stable session ID from userId + fingerprint of the user-agent.
- * One row per (user, browser-family) combination.
+ * Derive a stable session ID from userId + fingerprint of the provided key.
+ * When deviceKey (UUID from localStorage) is used, one row per browser instance.
+ * When UA is used as fallback, one row per UA family.
  */
-export function makeSessionId(userId: string, ua: string): string {
-  const key = `${userId}::${ua.slice(0, 80)}`;
+export function makeSessionId(userId: string, key: string): string {
+  const raw = `${userId}::${key.slice(0, 80)}`;
   let hash = 5381;
-  for (let i = 0; i < key.length; i++) {
-    hash = ((hash << 5) + hash) ^ key.charCodeAt(i);
+  for (let i = 0; i < raw.length; i++) {
+    hash = ((hash << 5) + hash) ^ raw.charCodeAt(i);
     hash = hash >>> 0;
   }
   return `sess-${userId.slice(0, 8)}-${hash.toString(16)}`;
 }
 
 /**
- * Track a session. When `deviceKey` is provided (a client-generated UUID from
- * localStorage) it is used as the session discriminator so each
- * browser/device instance gets its own row.  Falls back to UA fingerprint.
+ * Track a session. When `deviceKey` is provided (stable UUID from localStorage)
+ * it is used as the session discriminator so each browser instance gets its own row.
+ * Falls back to UA fingerprint.
  */
-export async function trackSession(userId: string, ip: string, userAgent: string, deviceKey?: string): Promise<void> {
+export async function trackSession(
+  userId: string,
+  ip: string,
+  userAgent: string,
+  deviceKey?: string,
+): Promise<void> {
   try {
     const sessionId = makeSessionId(userId, deviceKey ?? userAgent);
     await db
@@ -71,6 +100,8 @@ export async function trackSession(userId: string, ip: string, userAgent: string
         userAgent: (userAgent || "").slice(0, 400),
         deviceName: parseDeviceName(userAgent),
         deviceType: parseDeviceType(userAgent),
+        os: parseOs(userAgent),
+        browser: parseBrowser(userAgent),
         lastSeenAt: new Date(),
       })
       .onConflictDoUpdate({
@@ -81,7 +112,7 @@ export async function trackSession(userId: string, ip: string, userAgent: string
         },
       });
   } catch {
-    // Non-critical — never throw
+    // Non-critical — session tracking should never break request handling
   }
 }
 
@@ -91,7 +122,8 @@ export async function getUserSessions(userId: string): Promise<SessionInfo[]> {
       .select()
       .from(userSessionsTable)
       .where(eq(userSessionsTable.userId, userId))
-      .orderBy(desc(userSessionsTable.lastSeenAt));
+      .orderBy(desc(userSessionsTable.lastSeenAt))
+      .limit(20);
     return rows.map((r) => ({
       id: r.id,
       userId: r.userId,
@@ -99,6 +131,8 @@ export async function getUserSessions(userId: string): Promise<SessionInfo[]> {
       userAgent: r.userAgent,
       deviceName: r.deviceName,
       deviceType: r.deviceType,
+      os: r.os,
+      browser: r.browser,
       lastSeenAt: r.lastSeenAt.toISOString(),
       createdAt: r.createdAt.toISOString(),
     }));
@@ -107,29 +141,45 @@ export async function getUserSessions(userId: string): Promise<SessionInfo[]> {
   }
 }
 
-export async function deleteSession(sessionId: string): Promise<boolean> {
-  try {
-    await db.delete(userSessionsTable).where(eq(userSessionsTable.id, sessionId));
-    return true;
-  } catch {
-    return false;
-  }
+export async function deleteSession(sessionId: string): Promise<void> {
+  await db.delete(userSessionsTable).where(eq(userSessionsTable.id, sessionId));
 }
 
-export async function deleteAllOtherSessions(userId: string, keepSessionId: string): Promise<void> {
+export async function deleteAllOtherSessions(userId: string, currentSessionId: string): Promise<void> {
+  const sessions = await getUserSessions(userId);
+  const toDelete = sessions.filter((s) => s.id !== currentSessionId);
+  await Promise.all(toDelete.map((s) => deleteSession(s.id)));
+}
+
+/**
+ * Returns the most recent session for each user keyed by userId.
+ * Used by the admin panel to display last-seen per user.
+ */
+export async function getAllSessions(): Promise<Record<string, SessionInfo>> {
   try {
     const rows = await db
       .select()
       .from(userSessionsTable)
-      .where(eq(userSessionsTable.userId, userId));
-    await Promise.all(
-      rows
-        .filter((r) => r.id !== keepSessionId)
-        .map((r) => db.delete(userSessionsTable).where(eq(userSessionsTable.id, r.id))),
-    );
-  } catch {}
+      .orderBy(desc(userSessionsTable.lastSeenAt));
+    const result: Record<string, SessionInfo> = {};
+    for (const r of rows) {
+      if (!result[r.userId]) {
+        result[r.userId] = {
+          id: r.id,
+          userId: r.userId,
+          ip: r.ip,
+          userAgent: r.userAgent,
+          deviceName: r.deviceName,
+          deviceType: r.deviceType,
+          os: r.os,
+          browser: r.browser,
+          lastSeenAt: r.lastSeenAt.toISOString(),
+          createdAt: r.createdAt.toISOString(),
+        };
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
 }
-
-// Backwards-compat stubs (used nowhere critical but kept for type safety)
-export function getUserSession(_userId: string): SessionInfo | null { return null; }
-export function getAllSessions(): Record<string, SessionInfo> { return {}; }
