@@ -189,7 +189,41 @@
       "createdAt": "2026-05-24T00:52:14.449Z"
     }
   ],
-  "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84": [],
+  "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84": [
+    {
+      "id": 1780944737445,
+      "title": "تم رفض طلب حذف حسابك",
+      "body": "تم مراجعة طلب حذف حساب محمد علي حسين ورفضه. حسابك لا يزال نشطاً. للاستفسار تواصل معنا.",
+      "type": "warning",
+      "icon": "admin",
+      "sender": "LiraPro",
+      "recipient": "specific",
+      "targetWalletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "createdAt": "2026-06-08T18:52:17.445Z"
+    },
+    {
+      "id": 1780944672598,
+      "title": "تم رفض طلب حذف حسابك",
+      "body": "تم مراجعة طلب حذف حساب محمد علي حسين ورفضه. حسابك لا يزال نشطاً. للاستفسار تواصل معنا.",
+      "type": "warning",
+      "icon": "admin",
+      "sender": "LiraPro",
+      "recipient": "specific",
+      "targetWalletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "createdAt": "2026-06-08T18:51:12.598Z"
+    },
+    {
+      "id": 1780944646237,
+      "title": "تم رفض طلب التوثيق",
+      "body": "محمد علي حسين، تم مراجعة طلب التوثيق الخاص بك ورفضه في هذه المرحلة. يمكنك إعادة التقديم لاحقاً.",
+      "type": "warning",
+      "icon": "admin",
+      "sender": "LiraPro",
+      "recipient": "specific",
+      "targetWalletId": "b8bc8e6c-d1c3-4c8d-80db-8bddfef97a84",
+      "createdAt": "2026-06-08T18:50:46.237Z"
+    }
+  ],
   "8751d349-9ed6-42d8-8e81-d54adf2eb210": [
     {
       "id": 1780928661528,
