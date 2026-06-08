@@ -264,7 +264,7 @@ export function NotificationsPanel() {
         // Mark each unread notification as viewed — include auth token for ownership verification
         getToken().then(tok => {
           for (const n of notifications) {
-            if (!readIds.has(n.id) && n.id < 1_000_000_000) {
+            if (!readIds.has(n.id)) {
               fetch(`/api/notifications/${n.id}/view`, {
                 method: 'POST',
                 headers: {

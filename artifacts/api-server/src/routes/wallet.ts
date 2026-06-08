@@ -1,34 +1,62 @@
 /**
  * POST /api/wallet/event — emit a wallet-type notification for a specific user.
  *
- * Called by the frontend (or other server-side code) when a wallet transaction
- * occurs (credit, debit, exchange, etc.).  Fires the "wallet" notification type
- * through the unified pipeline: DB log → SSE → push.
+ * Auth (either is accepted):
+ *   - Supabase JWT (Authorization: Bearer <token>) — user notifies themselves
+ *   - Admin token (X-Admin-Token header) — admin notifies any targetUserId
  *
- * Auth: requires the user's own Supabase JWT OR an admin token.
+ * A request carrying a valid admin token does NOT require a user JWT.
  */
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { requireSupabaseAuth } from "../middlewares/requireSupabaseAuth.js";
 import { emitNotification } from "../services/notificationService.js";
 
 const router = Router();
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "SYRSYP2026ADMIN";
 
-router.post("/wallet/event", requireSupabaseAuth, async (req, res): Promise<void> => {
-  const actorId = req.supabaseUserId!;
-  const adminToken = req.headers["x-admin-token"] as string | undefined;
+function isAdminRequest(req: Request): boolean {
+  return req.headers["x-admin-token"] === ADMIN_TOKEN;
+}
+
+router.post("/wallet/event", async (req: Request, res: Response): Promise<void> => {
   const { targetUserId, title, body, actionUrl } = req.body as {
     targetUserId?: string; title: string; body: string; actionUrl?: string;
   };
 
-  // Determine effective recipient:
-  //   - Admin can send to any targetUserId
-  //   - Regular user can only send to themselves
-  const recipientId = (adminToken === ADMIN_TOKEN && targetUserId) ? targetUserId : actorId;
-
   if (!title || !body) {
     res.status(400).json({ error: "title and body required" });
     return;
+  }
+
+  let recipientId: string;
+
+  if (isAdminRequest(req)) {
+    // Admin path — targetUserId required
+    if (!targetUserId) {
+      res.status(400).json({ error: "targetUserId required for admin wallet event" });
+      return;
+    }
+    recipientId = targetUserId;
+  } else {
+    // User JWT path — delegate to requireSupabaseAuth logic inline
+    const authHeader = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
+    if (!authHeader) {
+      res.status(401).json({ error: "Authorization header or X-Admin-Token required" });
+      return;
+    }
+    // Run requireSupabaseAuth inline as a one-off verification
+    await new Promise<void>((resolve) => {
+      requireSupabaseAuth(req, res, () => resolve());
+    });
+    if (res.headersSent) return; // requireSupabaseAuth rejected the request
+    if (!req.supabaseUserId) {
+      res.status(401).json({ error: "Invalid token" });
+      return;
+    }
+    // User can only send to themselves (or admin-specified target is ignored)
+    recipientId = targetUserId && targetUserId === req.supabaseUserId
+      ? targetUserId
+      : req.supabaseUserId;
   }
 
   const result = await emitNotification({

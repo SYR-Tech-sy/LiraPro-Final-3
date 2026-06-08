@@ -7,10 +7,14 @@
  */
 import { createHmac } from "crypto";
 
-const DELIVERY_SECRET =
-  process.env.SESSION_SECRET ||
-  process.env.ADMIN_TOKEN ||
-  "lirapro-delivery-2026";
+const _rawSecret = process.env.SESSION_SECRET || process.env.ADMIN_TOKEN;
+if (!_rawSecret) {
+  throw new Error(
+    "[deliveryReceipt] SESSION_SECRET or ADMIN_TOKEN env var is required. " +
+    "Set SESSION_SECRET to a strong random value in your environment secrets.",
+  );
+}
+const DELIVERY_SECRET: string = _rawSecret;
 
 export function makeDeliveryReceipt(notifId: number, walletId: string): string {
   return createHmac("sha256", DELIVERY_SECRET)
