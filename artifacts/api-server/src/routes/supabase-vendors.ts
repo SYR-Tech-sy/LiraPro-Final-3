@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { requireSupabaseAuth } from "../middlewares/requireSupabaseAuth.js";
 import { supabaseAdmin } from "../lib/supabase-admin.js";
 import { db, usersTable, vendorProfilesTable, type VendorCategory } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -541,6 +542,36 @@ router.patch("/admin/app-settings", async (req, res): Promise<void> => {
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: "Failed to update setting" });
+  }
+});
+
+// GET /api/user/deletion-request — authenticated user checks their own deletion request status
+router.get("/user/deletion-request", requireSupabaseAuth, async (req, res): Promise<void> => {
+  const userId = req.supabaseUserId!;
+  try {
+    if (supabaseAdmin) {
+      const { data } = await supabaseAdmin
+        .from("delete_requests")
+        .select("status, created_at")
+        .eq("wallet_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (data && data.length > 0) {
+        res.json({ status: data[0].status as string, requestedAt: data[0].created_at as string });
+        return;
+      }
+    }
+    // Fallback to local JSON
+    const { getAllRequests } = await import("../services/deletionService.js");
+    const requests = getAllRequests();
+    const found = requests.find(r => r.walletId === userId);
+    if (found) {
+      res.json({ status: found.status, requestedAt: found.requestedAt });
+      return;
+    }
+    res.json({ status: null });
+  } catch {
+    res.json({ status: null });
   }
 });
 

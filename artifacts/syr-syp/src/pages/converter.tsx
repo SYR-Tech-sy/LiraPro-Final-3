@@ -176,23 +176,40 @@ export default function ConverterPage() {
   const [localCurrencyPrices, setLocalCurrencyPrices] = useState<Array<{
     productNameAr: string; avgPrice: number; weightedAvg: number; unit: string; sourceCount: number;
   }>>([]);
+  const [localCurrencyFetched, setLocalCurrencyFetched] = useState(false);
+
+  const [localGoldPrices, setLocalGoldPrices] = useState<Array<{
+    productNameAr: string; avgPrice: number; weightedAvg: number; unit: string; sourceCount: number;
+  }>>([]);
+  const [localGoldFetched, setLocalGoldFetched] = useState(false);
 
   useEffect(() => {
     if (rateMode === 'local') {
-      const fetchBoth = async () => {
+      setLocalCurrencyFetched(false);
+      setLocalGoldFetched(false);
+      const fetchAll = async () => {
         try {
           const prov = selectedProvince ? `&province=${encodeURIComponent(selectedProvince)}` : '';
-          const [r1, r2] = await Promise.all([
+          const [r1, r2, r3] = await Promise.all([
             fetch(`/api/market/prices?category=currency${prov}`).then(r => r.ok ? r.json() : []),
             fetch(`/api/market/prices?category=صرافة${prov}`).then(r => r.ok ? r.json() : []),
-          ]) as [typeof localCurrencyPrices, typeof localCurrencyPrices];
+            fetch(`/api/market/prices?category=gold${prov}`).then(r => r.ok ? r.json() : []),
+          ]) as [typeof localCurrencyPrices, typeof localCurrencyPrices, typeof localGoldPrices];
           const combined = [...(Array.isArray(r1) ? r1 : []), ...(Array.isArray(r2) ? r2 : [])];
           setLocalCurrencyPrices(combined);
+          setLocalGoldPrices(Array.isArray(r3) ? r3 : []);
         } catch {
           setLocalCurrencyPrices([]);
+          setLocalGoldPrices([]);
+        } finally {
+          setLocalCurrencyFetched(true);
+          setLocalGoldFetched(true);
         }
       };
-      void fetchBoth();
+      void fetchAll();
+    } else {
+      setLocalCurrencyFetched(false);
+      setLocalGoldFetched(false);
     }
   }, [rateMode, selectedProvince]);
 
@@ -257,20 +274,40 @@ export default function ConverterPage() {
     setTimeout(() => setIsSwapping(false), 300);
   };
 
+  const localGoldPricePerGram = useMemo(() => {
+    if (!localGoldPrices.length) return null;
+    const karatEntry = localGoldPrices.find(p =>
+      p.productNameAr.includes(selectedKarat) || p.productNameAr.toLowerCase().includes(`karat ${selectedKarat}`)
+    );
+    if (karatEntry) {
+      const price = karatEntry.weightedAvg > 0 ? karatEntry.weightedAvg : karatEntry.avgPrice;
+      return price > 0 ? price : null;
+    }
+    const anyEntry = localGoldPrices[0];
+    if (anyEntry) {
+      const price = anyEntry.weightedAvg > 0 ? anyEntry.weightedAvg : anyEntry.avgPrice;
+      return price > 0 ? price : null;
+    }
+    return null;
+  }, [localGoldPrices, selectedKarat]);
+
   const goldCalc = useMemo(() => {
     if (!goldData) return { syp: 0, usd: 0, buySyp: 0, buyUsd: 0, sellSyp: 0, sellUsd: 0 };
     const kd = (goldData.karats ?? []).find(k => k.karat.toString() === selectedKarat);
     if (!kd) return { syp: 0, usd: 0, buySyp: 0, buyUsd: 0, sellSyp: 0, sellUsd: 0 };
     const w = parseFloat(goldWeight) || 0;
+    const pricePerGramSYP = (rateMode === 'local' && localGoldPricePerGram)
+      ? localGoldPricePerGram
+      : kd.pricePerGramSYP;
     return {
-      syp: kd.pricePerGramSYP * w,
+      syp: pricePerGramSYP * w,
       usd: kd.pricePerGramUSD * w,
-      buySyp: kd.pricePerGramSYP * w * (1 + spread),
+      buySyp: pricePerGramSYP * w * (1 + spread),
       buyUsd: kd.pricePerGramUSD * w * (1 + spread),
-      sellSyp: kd.pricePerGramSYP * w * (1 - spread),
+      sellSyp: pricePerGramSYP * w * (1 - spread),
       sellUsd: kd.pricePerGramUSD * w * (1 - spread),
     };
-  }, [goldData, selectedKarat, goldWeight]);
+  }, [goldData, selectedKarat, goldWeight, rateMode, localGoldPricePerGram]);
 
   const goldValue = goldBuySellMode === 'buy'
     ? { syp: goldCalc.buySyp, usd: goldCalc.buyUsd }
@@ -441,6 +478,11 @@ export default function ConverterPage() {
             <div className="bg-secondary/50 rounded-xl p-4 flex flex-col items-center min-h-[90px] justify-center">
               {loadingRates ? (
                 <Skeleton className="h-10 w-40" />
+              ) : (rateMode === 'local' && localCurrencyFetched && !localMarketSypRate) ? (
+                <div className="text-center">
+                  <span className="text-base font-bold text-muted-foreground">لم يتم تحديد السعر بعد</span>
+                  <p className="text-[11px] text-muted-foreground/70 mt-1">لا توجد أسعار محلية مدخلة من التجار في هذه المنطقة</p>
+                </div>
               ) : rawResult > 0 ? (
                 <div className="text-center">
                   <span className="text-3xl font-bold text-primary dark:text-white">
@@ -546,6 +588,11 @@ export default function ConverterPage() {
             <div className="bg-secondary/50 rounded-xl p-4 flex flex-col items-center min-h-[90px] justify-center">
               {loadingGold ? (
                 <Skeleton className="h-12 w-40" />
+              ) : (rateMode === 'local' && localGoldFetched && !localGoldPricePerGram) ? (
+                <div className="text-center">
+                  <span className="text-base font-bold text-muted-foreground">لم يتم تحديد السعر بعد</span>
+                  <p className="text-[11px] text-muted-foreground/70 mt-1">لا توجد أسعار ذهب محلية مدخلة من التجار في هذه المنطقة</p>
+                </div>
               ) : (
                 <div className="text-center">
                   <span className="text-3xl font-bold text-primary dark:text-white">

@@ -312,7 +312,7 @@ function LocalMarketSection() {
         <h2 className="text-base font-bold flex items-center gap-2">
           <Store className="w-4 h-4 text-amber-600" />
           <span>الأسعار المحلية</span>
-          <span className="text-[9px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full font-bold">
+          <span className="text-[11px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full font-bold">
             من المصادر المحلية الموثوقة
           </span>
         </h2>
@@ -535,7 +535,7 @@ function LocalMarketSection() {
                                     </div>
                                     <p className="text-white/60 text-xs mt-1 truncate">{p.productNameAr}</p>
                                     <div className="flex items-baseline gap-2">
-                                      <span className="text-white font-bold text-2xl tabular-nums" style={{ fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"' }}>{formatNum(mainPrice, { decimals: 0 })}</span>
+                                      <span className="text-white font-bold text-2xl">{formatNum(mainPrice, { decimals: 0 })}</span>
                                       <span className="text-white/60 text-sm">ل.س</span>
                                     </div>
                                   </div>
@@ -583,7 +583,7 @@ function LocalMarketSection() {
                                 <div className="flex items-center gap-2">
                                   <div className="text-right">
                                     <p className="text-white/60 text-xs">{p.productNameAr}</p>
-                                    <p className="font-bold text-base text-white tabular-nums" style={{ fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"' }}>{formatNum(mainPrice, { decimals: 0 })}<span className="text-xs font-normal text-white/60"> ل.س</span></p>
+                                    <p className="font-bold text-base text-white">{formatNum(mainPrice, { decimals: 0 })}<span className="text-xs font-normal text-white/60"> ل.س</span></p>
                                   </div>
                                   <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
                                     style={{ background: 'rgba(255,255,255,0.12)' }}>

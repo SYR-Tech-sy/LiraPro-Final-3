@@ -1,0 +1,60 @@
+Apply all of the following changes carefully without affecting existing functionality, database integrity, authentication, or application performance.
+
+PHASE 1 – UI / UX IMPROVEMENTS
+
+1. Home Page – Local Market Prices Card
+
+- In the landing/welcome page, locate the first informational card named "Local Market Prices".
+- The numbers displayed inside the rotating category icons must use the exact same number font style, weight, and appearance used in the second card "LiraPro Exchange Rates".
+- Keep all existing animations and functionality unchanged.
+
+2. Home Page – Trusted Sources Text
+
+- Increase the size of the text:
+  "من المصادر المحلية الموثوقة"
+  slightly while preserving the current design, alignment, spacing, and visual style.
+
+3. Profile Page – Delete Account Request
+
+- After a user submits and confirms an account deletion request, disable the ability to submit another deletion request.
+- Prevent duplicate deletion requests until the current request is processed or resolved.
+
+4. Profile Page – Remove Administration Messages
+
+- Completely remove the "Administration Messages" icon/section from the user profile page.
+- Remove all related routes, menu entries, UI components, and unused references.
+
+5. Delete Request Details Modal
+
+- After an administrator rejects an account deletion request, the deletion request details modal must no longer appear for that user.
+- It should only reappear if the user submits a new deletion request in the future.
+
+6. Conversion Page – Local Prices Mode
+
+- When the user selects:
+  "Based on Local Merchants and Price Providers"
+  only merchant/provider submitted prices must be displayed.
+- If a currency has no submitted local price, display:
+  "لم يتم تحديد السعر بعد"
+  instead of showing incorrect, empty, or fallback values.
+
+7. Gold Calculator
+
+- Apply the same local-price behavior used in the conversion page.
+- Missing prices must display:
+  "لم يتم تحديد السعر بعد"
+
+8. Notifications Page
+
+- Newly created alerts must appear immediately without delay.
+- Fix all alert triggers so they activate correctly once the target price is reached.
+- Ensure alerts work for all supported categories:
+  • Currencies
+  • Precious metals
+  • Any other supported pricing category
+
+Testing Requirements:
+
+- Verify all UI changes work on desktop, tablet, and mobile devices.
+- Verify no visual regressions occur.
+- Verify all user interactions remain functional.

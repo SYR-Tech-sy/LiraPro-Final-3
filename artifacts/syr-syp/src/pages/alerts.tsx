@@ -118,7 +118,7 @@ export default function AlertsPage() {
   const { formatNum, t } = useApp();
   const { isSignedIn } = useUser();
 
-  const { data: alertsRaw, isLoading, refetch } = useGetAlerts();
+  const { data: alertsRaw, isLoading, refetch } = useGetAlerts({ query: { staleTime: 0, refetchOnMount: true } });
   const alerts: PriceAlert[] = (alertsRaw as PriceAlert[] | undefined) ?? [];
 
   const deleteMutation = useDeleteAlert({

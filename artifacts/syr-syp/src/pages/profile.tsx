@@ -13,7 +13,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LogOut, User, Loader2, Wallet, Shield, ChevronLeft, Edit3, X, CheckCircle, Trash2, AlertCircle, Clock, Info, Camera, XCircle, Smartphone, Monitor, Tablet, QrCode, ScanLine, Home, Inbox, MessageSquare, CheckCheck } from "lucide-react";
+import { LogOut, User, Loader2, Wallet, Shield, ChevronLeft, Edit3, X, CheckCircle, Trash2, AlertCircle, Clock, Info, Camera, XCircle, Smartphone, Monitor, Tablet, QrCode, ScanLine, Home } from "lucide-react";
 import { BlueBadge } from '@/components/golden-badge';
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -153,51 +153,24 @@ export default function ProfilePage() {
     }
   }
 
-  interface AdminMsg { id: number; user_id: string; title: string; body: string; type: string; read: boolean; created_at: string; }
-  const [adminMessages, setAdminMessages] = useState<AdminMsg[]>([]);
-  const [adminMsgLoading, setAdminMsgLoading] = useState(false);
-  const [showInbox, setShowInbox] = useState(false);
-
+  // Check deletion request status from server — clear localStorage if rejected/handled/cancelled
   useEffect(() => {
-    if (!isSignedIn) return;
-    const load = async () => {
-      setAdminMsgLoading(true);
+    if (!isSignedIn || !user?.id) return;
+    const checkStatus = async () => {
       try {
         const tok = await getToken();
-        const headers = { Authorization: `Bearer ${tok}` };
-        // Try local JSON first (guaranteed delivery), then Supabase as supplement
-        const [localRes, supaRes] = await Promise.allSettled([
-          fetch('/api/user-notifications', { headers }),
-          fetch('/api/user-messages', { headers }),
-        ]);
-        const local: AdminMsg[] = localRes.status === 'fulfilled' && localRes.value.ok
-          ? (await localRes.value.json() as AdminMsg[])
-          : [];
-        const supa: AdminMsg[] = supaRes.status === 'fulfilled' && supaRes.value.ok
-          ? (await supaRes.value.json() as AdminMsg[])
-          : [];
-        // Merge, deduplicate by title+body (local JSON may duplicate Supabase entries)
-        const seen = new Set<string>();
-        const merged: AdminMsg[] = [];
-        for (const m of [...local, ...supa]) {
-          const key = `${m.title}::${m.body}`;
-          if (!seen.has(key)) { seen.add(key); merged.push(m); }
+        const res = await fetch('/api/user/deletion-request', { headers: { Authorization: `Bearer ${tok}` } });
+        if (res.ok) {
+          const data = await res.json() as { status: string | null };
+          if (data.status !== 'pending') {
+            localStorage.removeItem(`syp-delete-request-${user.id}`);
+            setDeleteRequest(null);
+          }
         }
-        setAdminMessages(merged);
-      } catch { setAdminMessages([]); } finally { setAdminMsgLoading(false); }
+      } catch {}
     };
-    void load();
-  }, [isSignedIn, getToken]);
-
-  const markMessageRead = async (id: number) => {
-    setAdminMessages(prev => prev.map(m => m.id === id ? { ...m, read: true } : m));
-    try {
-      const tok = await getToken();
-      const headers = { Authorization: `Bearer ${tok}` };
-      fetch(`/api/user-notifications/${id}/read`, { method: 'PATCH', headers }).catch(() => {});
-      fetch(`/api/user-messages/${id}/read`, { method: 'PATCH', headers }).catch(() => {});
-    } catch {}
-  };
+    void checkStatus();
+  }, [isSignedIn, user?.id, getToken]);
 
   interface _VerifyReqItem {
     id: string; supabaseId: string; lphId: string;
@@ -1006,50 +979,6 @@ export default function ProfilePage() {
         </AnimatePresence>
       </Card>
 
-      {/* Admin Messages Inbox */}
-      {(adminMsgLoading || adminMessages.length > 0 || true) && (
-        <div className="rounded-xl border border-primary/20 bg-card overflow-hidden">
-          <button
-            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/30 transition-colors"
-            onClick={() => setShowInbox(v => !v)}
-          >
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Inbox className="w-4 h-4 text-primary" />
-            </div>
-            <span className="text-sm font-medium">رسائل الإدارة</span>
-            {adminMessages.filter(m => !m.read).length > 0 && (
-              <span className="bg-primary text-primary-foreground text-xs rounded-full px-2 py-0.5">
-                {adminMessages.filter(m => !m.read).length}
-              </span>
-            )}
-            {adminMsgLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground mr-auto" />}
-            {!adminMsgLoading && <span className="mr-auto text-xs text-muted-foreground">{showInbox ? '▲' : '▼'}</span>}
-          </button>
-          {showInbox && (
-            <div className="divide-y divide-border border-t border-primary/10">
-              {adminMessages.length === 0 && (
-                <p className="text-center text-xs text-muted-foreground py-4">لا توجد رسائل بعد</p>
-              )}
-              {adminMessages.map(m => (
-                <div
-                  key={m.id}
-                  className={`px-4 py-3 flex items-start gap-3 text-sm cursor-pointer transition-colors hover:bg-accent/20 ${m.read ? 'opacity-60' : 'bg-primary/5'}`}
-                  onClick={() => !m.read && void markMessageRead(m.id)}
-                >
-                  <MessageSquare className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground">{m.title}</p>
-                    <p className="text-muted-foreground text-xs mt-0.5 whitespace-pre-wrap break-words">{m.body}</p>
-                    <p className="text-xs text-muted-foreground/50 mt-1">{new Date(m.created_at).toLocaleDateString('ar-SY')}</p>
-                  </div>
-                  {!m.read && <CheckCheck className="w-3.5 h-3.5 text-primary/40 mt-0.5 shrink-0" />}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Settings & Logout */}
       <div className="flex flex-col gap-2">
         <button
@@ -1065,10 +994,11 @@ export default function ProfilePage() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setDeleteModal(true); setDeleteInput(''); setDeleteMsg(''); setDeleteSuccess(false); }}
-            className="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border border-destructive/20 bg-destructive/5 hover:bg-destructive/10 transition-colors text-sm text-destructive/80"
+            onClick={() => { if (!deleteRequest) { setDeleteModal(true); setDeleteInput(''); setDeleteMsg(''); setDeleteSuccess(false); } }}
+            disabled={!!deleteRequest}
+            className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors text-sm ${deleteRequest ? 'border-border bg-secondary/50 text-muted-foreground cursor-not-allowed opacity-60' : 'border-destructive/20 bg-destructive/5 hover:bg-destructive/10 text-destructive/80'}`}
           >
-            <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${deleteRequest ? 'bg-secondary' : 'bg-destructive/10'}`}>
               <Trash2 className="w-4 h-4" />
             </div>
             {deleteRequest ? 'طلب الحذف قيد الانتظار' : 'طلب حذف الحساب'}
