@@ -8,7 +8,7 @@ import { Globe, Hash, Moon, Sun, Lock, X, Eye, EyeOff, Bell, TrendingUp, Message
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useUser, useAuth } from '@/context/auth-context';
-import { getAlertSoundEnabled, setAlertSoundEnabled } from '@/hooks/use-alert-sound';
+import { getAlertSoundEnabled, setAlertSoundEnabled, playAlertChime } from '@/hooks/use-alert-sound';
 
 const NOTIF_PREFS_LIST = [
   { id: 'prices',       labelAr: 'تنبيهات الأسعار',            Icon: TrendingUp },
@@ -267,6 +267,15 @@ export default function SettingsPage() {
               <span className="text-sm font-medium truncate">
                 {ar ? 'صوت تنبيهات الأسعار' : 'Price alert sound'}
               </span>
+              {soundEnabled && (
+                <button
+                  onClick={() => playAlertChime()}
+                  className="text-xs text-primary/70 hover:text-primary border border-primary/30 hover:border-primary/60 rounded-full px-2 py-0.5 transition-colors duration-150 flex-shrink-0"
+                  title={ar ? 'معاينة الصوت' : 'Preview sound'}
+                >
+                  {ar ? 'تجربة' : 'Test'}
+                </button>
+              )}
             </div>
             <button
               onClick={toggleSound}
