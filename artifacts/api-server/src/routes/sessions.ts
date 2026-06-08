@@ -5,16 +5,17 @@ import {
   deleteSession,
   deleteAllOtherSessions,
   makeSessionId,
-  trackSession,
 } from "../services/sessionService.js";
 
 const router = Router();
 
 // GET /api/sessions — return all sessions for the current user
+// Uses X-Device-Id when available for accurate isCurrent computation
 router.get("/sessions", requireSupabaseAuth, async (req, res): Promise<void> => {
   const userId = req.supabaseUserId!;
-  const ua = req.headers["user-agent"] ?? "";
-  const currentId = makeSessionId(userId, ua);
+  const ua = (req.headers["user-agent"] as string | undefined) ?? "";
+  const deviceId = req.headers["x-device-id"] as string | undefined;
+  const currentId = makeSessionId(userId, deviceId ?? ua);
   const sessions = await getUserSessions(userId);
   res.json(
     sessions.map((s) => ({
@@ -24,15 +25,10 @@ router.get("/sessions", requireSupabaseAuth, async (req, res): Promise<void> => 
   );
 });
 
-// PUT /api/sessions/heartbeat — update lastSeenAt for the current session (called every 5 min)
-router.put("/sessions/heartbeat", requireSupabaseAuth, async (req, res): Promise<void> => {
-  const userId = req.supabaseUserId!;
-  const ip =
-    ((req.headers["x-forwarded-for"] as string | undefined) ?? req.socket.remoteAddress ?? "")
-      .split(",")[0]
-      ?.trim() ?? "";
-  const ua = (req.headers["user-agent"] as string | undefined) ?? "";
-  await trackSession(userId, ip, ua);
+// PUT /api/sessions/heartbeat — keeps lastSeenAt fresh every 5 minutes
+// requireSupabaseAuth middleware already calls trackSession(userId, ip, ua, deviceId)
+// so no additional trackSession call is needed here.
+router.put("/sessions/heartbeat", requireSupabaseAuth, (_req, res): void => {
   res.json({ ok: true });
 });
 
@@ -55,8 +51,9 @@ router.delete("/sessions/:sessionId", requireSupabaseAuth, async (req, res): Pro
 // DELETE /api/sessions — revoke all other sessions (keep current)
 router.delete("/sessions", requireSupabaseAuth, async (req, res): Promise<void> => {
   const userId = req.supabaseUserId!;
-  const ua = req.headers["user-agent"] ?? "";
-  const currentId = makeSessionId(userId, ua);
+  const ua = (req.headers["user-agent"] as string | undefined) ?? "";
+  const deviceId = req.headers["x-device-id"] as string | undefined;
+  const currentId = makeSessionId(userId, deviceId ?? ua);
   await deleteAllOtherSessions(userId, currentId);
   res.json({ success: true });
 });

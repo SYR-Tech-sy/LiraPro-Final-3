@@ -1324,9 +1324,30 @@ function AppSideEffects() {
         });
       } catch { /* non-critical */ }
     };
-    void ping(); // fire immediately on sign-in
+    void ping();
     const interval = setInterval(() => { void ping(); }, 5 * 60_000);
     return () => clearInterval(interval);
+  }, [isSignedIn, getToken]);
+
+  // SW message listener — relay NOTIFICATION_DISMISSED to server as a read receipt
+  useEffect(() => {
+    if (!isSignedIn || !('serviceWorker' in navigator)) return;
+    const handleMsg = async (event: MessageEvent<{ type: string; notifId?: number | null; walletId?: string | null }>) => {
+      if (event.data?.type !== 'NOTIFICATION_DISMISSED') return;
+      const { notifId, walletId } = event.data;
+      if (!notifId || !walletId) return;
+      try {
+        const tok = await getToken();
+        if (!tok) return;
+        await fetch(`/api/notifications/${notifId}/view`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+          body: JSON.stringify({ walletId }),
+        });
+      } catch { /* non-critical */ }
+    };
+    navigator.serviceWorker.addEventListener('message', handleMsg);
+    return () => navigator.serviceWorker.removeEventListener('message', handleMsg);
   }, [isSignedIn, getToken]);
 
   return null;

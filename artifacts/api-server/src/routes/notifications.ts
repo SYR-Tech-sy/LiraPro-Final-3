@@ -90,25 +90,27 @@ async function isDuplicate(dedupHash: string): Promise<boolean> {
  * Inserts a notification_log row with status 'queued' and returns the logId.
  * Returns null on DB error (non-critical).
  */
-async function logNotification(
-  notifId: number,
-  title: string,
-  body: string,
-  type: string,
-  recipientType: string,
-  targetUserId?: string,
-): Promise<number | null> {
+async function logNotification(opts: {
+  notifId: number;
+  title: string;
+  body: string;
+  type: string;
+  recipientType: string;
+  targetUserId?: string;
+  actionUrl?: string;
+}): Promise<number | null> {
   try {
-    const dedupHash = makeNotifDedup(title, body, recipientType, targetUserId);
+    const dedupHash = makeNotifDedup(opts.title, opts.body, opts.recipientType, opts.targetUserId);
     const rows = await db
       .insert(notificationLogTable)
       .values({
-        notifId,
-        title,
-        body,
-        type,
-        recipientType,
-        targetUserId: targetUserId ?? null,
+        notifId: opts.notifId,
+        title: opts.title,
+        body: opts.body,
+        type: opts.type,
+        recipientType: opts.recipientType,
+        targetUserId: opts.targetUserId ?? null,
+        actionUrl: opts.actionUrl ?? "/app/home",
         status: "queued",
         dedupHash,
       })
@@ -119,12 +121,15 @@ async function logNotification(
   }
 }
 
-/** Update the status of a notification_log row after a send attempt. */
-async function updateNotifLogStatus(logId: number, status: "sent" | "failed"): Promise<void> {
+/** Update notification_log status after a send attempt. Sets sentAt on 'sent'. */
+async function updateNotifLogStatus(logId: number, status: "sent" | "failed" | "delivered" | "read"): Promise<void> {
   try {
     await db
       .update(notificationLogTable)
-      .set({ status })
+      .set({
+        status,
+        ...(status === "sent" ? { sentAt: new Date() } : {}),
+      })
       .where(eq(notificationLogTable.logId, logId));
   } catch { /* non-critical */ }
 }
@@ -152,11 +157,8 @@ interface Notification {
 function readNotifications(): Notification[] {
   try {
     if (!existsSync(NOTIFICATIONS_FILE)) return [];
-    const raw = readFileSync(NOTIFICATIONS_FILE, "utf-8");
-    return JSON.parse(raw) as Notification[];
-  } catch {
-    return [];
-  }
+    return JSON.parse(readFileSync(NOTIFICATIONS_FILE, "utf-8")) as Notification[];
+  } catch { return []; }
 }
 
 function saveNotifications(notifications: Notification[]): void {
@@ -165,22 +167,19 @@ function saveNotifications(notifications: Notification[]): void {
 
 // GET /api/notifications — public
 router.get("/notifications", (_req, res): void => {
-  const notifications = readNotifications();
-  res.json(notifications.slice(-50).reverse());
+  res.json(readNotifications().slice(-50).reverse());
 });
 
 // POST /api/notifications — admin only
 router.post("/notifications", async (req, res): Promise<void> => {
   const token = req.headers["x-admin-token"] as string;
   if (!token || token !== ADMIN_TOKEN) {
-    res.status(403).json({ error: "Unauthorized" });
-    return;
+    res.status(403).json({ error: "Unauthorized" }); return;
   }
 
   const { title, body, type = "info", icon = "bell", sender } = req.body as Notification;
   if (!title || !body) {
-    res.status(400).json({ error: "title and body are required" });
-    return;
+    res.status(400).json({ error: "title and body are required" }); return;
   }
 
   // 60-second dedup guard
@@ -192,8 +191,7 @@ router.post("/notifications", async (req, res): Promise<void> => {
 
   const newNotification: Notification = {
     id: Date.now(),
-    title,
-    body,
+    title, body,
     type: type as Notification["type"],
     icon,
     ...(sender ? { sender } : {}),
@@ -208,10 +206,16 @@ router.post("/notifications", async (req, res): Promise<void> => {
   broadcastSSE("notification", newNotification);
   res.json(newNotification);
 
-  // Insert as 'queued', send push, update status
-  const logId = await logNotification(newNotification.id, title, body, newNotification.type, "all");
+  // DB log: insert as 'queued' → send push → update to 'sent'/'failed'
+  const logId = await logNotification({
+    notifId: newNotification.id,
+    title, body,
+    type: newNotification.type,
+    recipientType: "all",
+    actionUrl: "/app/home",
+  });
   try {
-    await sendPushToAll(title, body, "/app/home");
+    await sendPushToAll(title, body, "/app/home", newNotification.id);
     if (logId !== null) void updateNotifLogStatus(logId, "sent");
   } catch {
     if (logId !== null) void updateNotifLogStatus(logId, "failed");
@@ -235,9 +239,7 @@ function saveUserNotifications(data: Record<string, Notification[]>): void {
 router.get("/notifications/user", (req, res): void => {
   const walletId = req.query.walletId as string;
   if (!walletId) { res.status(400).json({ error: "walletId required" }); return; }
-  const all = readUserNotifications();
-  const userMsgs = (all[walletId] ?? []).slice(0, 50);
-  res.json(userMsgs);
+  res.json((readUserNotifications()[walletId] ?? []).slice(0, 50));
 });
 
 // POST /api/notifications/user — admin sends notification to a specific user
@@ -248,8 +250,7 @@ router.post("/notifications/user", async (req, res): Promise<void> => {
     walletId: string; title: string; body: string; type?: string; sender?: string; targetName?: string;
   };
   if (!walletId || !title || !body) {
-    res.status(400).json({ error: "walletId, title, body required" });
-    return;
+    res.status(400).json({ error: "walletId, title, body required" }); return;
   }
 
   // 60-second dedup guard
@@ -262,9 +263,7 @@ router.post("/notifications/user", async (req, res): Promise<void> => {
   const all = readUserNotifications();
   if (!all[walletId]) all[walletId] = [];
   const newMsg: Notification = {
-    id: Date.now(),
-    title,
-    body,
+    id: Date.now(), title, body,
     type: type as Notification["type"],
     icon: "admin",
     ...(sender ? { sender } : {}),
@@ -281,10 +280,17 @@ router.post("/notifications/user", async (req, res): Promise<void> => {
   broadcastSSE("notification", newMsg, walletId);
   res.json(newMsg);
 
-  // Insert as 'queued', send push to user, update status
-  const logId = await logNotification(newMsg.id, title, body, newMsg.type, "user", walletId);
+  // DB log: insert as 'queued' → send push → update to 'sent'/'failed'
+  const logId = await logNotification({
+    notifId: newMsg.id,
+    title, body,
+    type: newMsg.type,
+    recipientType: "user",
+    targetUserId: walletId,
+    actionUrl: "/app/home",
+  });
   try {
-    await sendPushToUser(walletId, title, body, "/app/home");
+    await sendPushToUser(walletId, title, body, "/app/home", newMsg.id);
     if (logId !== null) void updateNotifLogStatus(logId, "sent");
   } catch {
     if (logId !== null) void updateNotifLogStatus(logId, "failed");
@@ -324,10 +330,20 @@ router.put("/notifications/user/:walletId/:id", (req, res): void => {
   res.json(userMsgs[idx]);
 });
 
-// DELETE /api/notifications/user/:walletId/all — authenticated user clears their own notifications
+// DELETE /api/notifications/user/:walletId/all
+// Requires auth; walletId must match the authenticated user OR an admin token must be provided.
 router.delete("/notifications/user/:walletId/all", requireSupabaseAuth, (req, res): void => {
   const { walletId } = req.params as { walletId: string };
+  const userId = req.supabaseUserId!;
+  const adminToken = req.headers["x-admin-token"] as string | undefined;
+
   if (!walletId) { res.status(400).json({ error: "walletId required" }); return; }
+
+  // Ownership check: must be the owner or a valid admin
+  if (walletId !== userId && (!adminToken || adminToken !== ADMIN_TOKEN)) {
+    res.status(403).json({ error: "Forbidden — can only clear your own notifications" }); return;
+  }
+
   const all = readUserNotifications();
   all[walletId] = [];
   saveUserNotifications(all);
@@ -349,7 +365,6 @@ router.delete("/notifications/user/:walletId/:id", (req, res): void => {
 // ── View Tracking ─────────────────────────────────────────────────────────────
 
 const VIEWS_FILE = join(__dir, "../notification-views.json");
-
 interface ViewRecord { walletId: string; viewedAt: string; }
 type ViewsData = Record<string, ViewRecord[]>;
 
@@ -364,7 +379,7 @@ function saveViews(data: ViewsData): void {
   writeFileSync(VIEWS_FILE, JSON.stringify(data, null, 2), "utf-8");
 }
 
-// POST /api/notifications/:id/view — user marks notification as read
+// POST /api/notifications/:id/view — user marks notification as read (delivered → read)
 router.post("/notifications/:id/view", async (req, res): Promise<void> => {
   const id = req.params.id ?? "";
   const { walletId } = req.body as { walletId?: string };
@@ -375,7 +390,7 @@ router.post("/notifications/:id/view", async (req, res): Promise<void> => {
   if (!already) {
     views[id].push({ walletId, viewedAt: new Date().toISOString() });
     saveViews(views);
-    // Transition notification_log status → 'read'
+    // Transition notification_log → 'read'
     const numericId = parseInt(id);
     if (!isNaN(numericId)) {
       void db
@@ -401,13 +416,9 @@ router.get("/notifications/:id/viewers", (req, res): void => {
 // DELETE /api/notifications/:id — admin only
 router.delete("/notifications/:id", (req, res): void => {
   const token = req.headers["x-admin-token"] as string;
-  if (!token || token !== ADMIN_TOKEN) {
-    res.status(403).json({ error: "Unauthorized" });
-    return;
-  }
+  if (!token || token !== ADMIN_TOKEN) { res.status(403).json({ error: "Unauthorized" }); return; }
   const id = parseInt(req.params.id ?? "0");
-  const notifications = readNotifications().filter(n => n.id !== id);
-  saveNotifications(notifications);
+  saveNotifications(readNotifications().filter(n => n.id !== id));
   res.json({ success: true });
 });
 
@@ -415,28 +426,21 @@ router.delete("/notifications/:id", (req, res): void => {
 
 interface BroadcastData {
   speed?: 'slow' | 'normal' | 'fast';
-  text: string;
-  textColor: string;
-  countdown?: number;
-  countdownColor?: string;
-  startedAt: string;
-  endsAt?: string;
+  text: string; textColor: string;
+  countdown?: number; countdownColor?: string;
+  startedAt: string; endsAt?: string;
 }
 
 let activeBroadcast: BroadcastData | null = null;
 
-// GET /api/broadcast
 router.get("/broadcast", (_req, res): void => {
   if (!activeBroadcast) { res.json(null); return; }
   if (activeBroadcast.endsAt && new Date(activeBroadcast.endsAt) < new Date()) {
-    activeBroadcast = null;
-    res.json(null);
-    return;
+    activeBroadcast = null; res.json(null); return;
   }
   res.json(activeBroadcast);
 });
 
-// POST /api/broadcast — admin starts broadcast
 router.post("/broadcast", (req, res): void => {
   const token = req.headers["x-admin-token"] as string;
   if (!token || token !== ADMIN_TOKEN) { res.status(403).json({ error: "Unauthorized" }); return; }
@@ -445,13 +449,10 @@ router.post("/broadcast", (req, res): void => {
   };
   if (!text?.trim()) { res.status(400).json({ error: "text required" }); return; }
   activeBroadcast = {
-    text: text.trim(),
-    textColor,
-    speed,
+    text: text.trim(), textColor, speed,
     startedAt: new Date().toISOString(),
     ...(countdown && countdown > 0 ? {
-      countdown,
-      countdownColor,
+      countdown, countdownColor,
       endsAt: new Date(Date.now() + countdown * 1000).toISOString(),
     } : {}),
   };
@@ -460,7 +461,6 @@ router.post("/broadcast", (req, res): void => {
   res.json(activeBroadcast);
 });
 
-// DELETE /api/broadcast — admin stops broadcast
 router.delete("/broadcast", (req, res): void => {
   const token = req.headers["x-admin-token"] as string;
   if (!token || token !== ADMIN_TOKEN) { res.status(403).json({ error: "Unauthorized" }); return; }

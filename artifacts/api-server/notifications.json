@@ -36,5 +36,14 @@
     "icon": "bell",
     "recipient": "all",
     "createdAt": "2026-06-08T17:16:45.931Z"
+  },
+  {
+    "id": 1780939398668,
+    "title": "تجربة dedup",
+    "body": "نص فريد لاختبار الـ dedup",
+    "type": "info",
+    "icon": "bell",
+    "recipient": "all",
+    "createdAt": "2026-06-08T17:23:18.668Z"
   }
 ]

@@ -25,7 +25,7 @@ interface SubBody {
   keys: { auth: string; p256dh: string };
 }
 
-/** Returns true only for permanent subscription expiry errors (410 Gone, 404 Not Found). */
+/** Only remove a subscription on permanent expiry (410 Gone / 404 Not Found). */
 function isPermanentPushError(err: unknown): boolean {
   const status = (err as { statusCode?: number })?.statusCode;
   return status === 404 || status === 410;
@@ -81,7 +81,7 @@ router.post("/push/subscribe", requireSupabaseAuth, async (req, res): Promise<vo
   }
 });
 
-// DELETE /api/push/subscribe — authenticated, scoped to the requesting user
+// DELETE /api/push/subscribe — authenticated; scoped to the requesting user only
 router.delete("/push/subscribe", requireSupabaseAuth, async (req, res): Promise<void> => {
   const userId = req.supabaseUserId!;
   const { endpoint } = req.body as { endpoint?: string };
@@ -117,7 +117,12 @@ router.get("/push/subscribers-count", async (req, res): Promise<void> => {
   }
 });
 
-export async function sendPushToAll(title: string, body: string, url = "/app/home"): Promise<void> {
+export async function sendPushToAll(
+  title: string,
+  body: string,
+  url = "/app/home",
+  notifId?: number,
+): Promise<void> {
   let subs: typeof pushSubscriptionsTable.$inferSelect[];
   try {
     subs = await db.select().from(pushSubscriptionsTable);
@@ -126,7 +131,7 @@ export async function sendPushToAll(title: string, body: string, url = "/app/hom
   }
   if (subs.length === 0) return;
 
-  const payload = JSON.stringify({ title, body, url });
+  const payload = JSON.stringify({ title, body, url, ...(notifId ? { notifId } : {}) });
   const expiredEndpoints: string[] = [];
 
   await Promise.all(
@@ -141,10 +146,8 @@ export async function sendPushToAll(title: string, body: string, url = "/app/hom
           .set({ lastUsedAt: new Date() })
           .where(eq(pushSubscriptionsTable.endpoint, sub.endpoint));
       } catch (err) {
-        if (isPermanentPushError(err)) {
-          expiredEndpoints.push(sub.endpoint);
-        }
-        // Transient errors (5xx, network) → keep subscription, retry next time
+        if (isPermanentPushError(err)) expiredEndpoints.push(sub.endpoint);
+        // Transient errors → keep subscription
       }
     }),
   );
@@ -158,7 +161,13 @@ export async function sendPushToAll(title: string, body: string, url = "/app/hom
   }
 }
 
-export async function sendPushToUser(userId: string, title: string, body: string, url = "/app/home"): Promise<void> {
+export async function sendPushToUser(
+  userId: string,
+  title: string,
+  body: string,
+  url = "/app/home",
+  notifId?: number,
+): Promise<void> {
   let subs: typeof pushSubscriptionsTable.$inferSelect[];
   try {
     subs = await db
@@ -170,7 +179,14 @@ export async function sendPushToUser(userId: string, title: string, body: string
   }
   if (subs.length === 0) return;
 
-  const payload = JSON.stringify({ title, body, url });
+  // Include walletId so the SW can enqueue a read receipt
+  const payload = JSON.stringify({
+    title,
+    body,
+    url,
+    walletId: userId,
+    ...(notifId ? { notifId } : {}),
+  });
   const expiredEndpoints: string[] = [];
 
   await Promise.all(
@@ -185,9 +201,7 @@ export async function sendPushToUser(userId: string, title: string, body: string
           .set({ lastUsedAt: new Date() })
           .where(eq(pushSubscriptionsTable.endpoint, sub.endpoint));
       } catch (err) {
-        if (isPermanentPushError(err)) {
-          expiredEndpoints.push(sub.endpoint);
-        }
+        if (isPermanentPushError(err)) expiredEndpoints.push(sub.endpoint);
       }
     }),
   );
