@@ -795,7 +795,7 @@ export default function SupportPage() {
 
   // ─── Voice-to-text (STT) ─────────────────────────────────────────────────
 
-  const _startVoiceInput = () => {
+  const startVoiceInput = () => {
     setMicError('');
     const w = window as Window & {
       SpeechRecognition?: ISpeechRecognitionCtor;
@@ -1300,7 +1300,7 @@ export default function SupportPage() {
               </button>
             ) : (
               <button
-                onClick={startRecording}
+                onClick={startVoiceInput}
                 className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors bg-secondary/60 text-muted-foreground hover:text-primary hover:bg-primary/10"
                 title="تسجيل رسالة صوتية"
               >
