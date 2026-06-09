@@ -49,40 +49,58 @@ async function initMetalOverridePersistence(): Promise<void> {
   }
 }
 
-migrateJsonFileToDB()
-  .then(() => {
-    logger.info("SYP rate migration from JSON file completed");
-  })
-  .catch((err) => {
-    logger.warn({ err }, "SYP rate migration from JSON file failed — continuing startup");
-  })
-  .then(() => migrateCurrencyJsonFileToDB())
-  .then(() => {
-    logger.info("Currency rate migration from JSON file completed");
-  })
-  .catch((err) => {
-    logger.warn({ err }, "Currency rate migration from JSON file failed — continuing startup");
-  })
-  .then(() => initMetalOverridePersistence())
-  .catch((err) => {
-    logger.warn({ err }, "Failed to read metal/gold overrides from DB — DB may be unavailable");
-  })
-  .then(() => pruneOldHistory(90))
-  .then((deleted) => {
-    if (typeof deleted === 'number' && deleted > 0) {
+async function migrateWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 1000): Promise<T | null> {
+  let attempt = 0;
+  while (attempt < retries) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt += 1;
+      logger.warn({ err, attempt, retries }, "Migration attempt failed");
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, delayMs * attempt));
+      }
+    }
+  }
+  return null;
+}
+
+async function startServer() {
+  try {
+    await migrateWithRetry(migrateJsonFileToDB, 3, 1000);
+    await migrateWithRetry(migrateCurrencyJsonFileToDB, 3, 1000);
+    await initMetalOverridePersistence();
+    const deleted = await pruneOldHistory(90);
+    if (typeof deleted === "number" && deleted > 0) {
       logger.info({ deleted }, "Pruned old override history entries (>90 days)");
     }
-  })
-  .catch((err) => {
-    logger.warn({ err }, "Failed to prune old override history — continuing startup");
-  })
-  .finally(() => {
-    app.listen(port, (err) => {
+
+    const server = app.listen(port, (err?: any) => {
       if (err) {
         logger.error({ err }, "Error listening on port");
         process.exit(1);
       }
-
       logger.info({ port }, "Server listening");
     });
-  });
+
+    const graceful = (signal: string) => async () => {
+      logger.info({ signal }, "Shutdown signal received — closing server");
+      server.close(() => {
+        logger.info("Server closed");
+        process.exit(0);
+      });
+      setTimeout(() => {
+        logger.error("Forcing shutdown after timeout");
+        process.exit(1);
+      }, 30_000);
+    };
+
+    process.on("SIGINT", graceful("SIGINT"));
+    process.on("SIGTERM", graceful("SIGTERM"));
+  } catch (err) {
+    logger.error({ err }, "Startup failed");
+    process.exit(1);
+  }
+}
+
+startServer();
