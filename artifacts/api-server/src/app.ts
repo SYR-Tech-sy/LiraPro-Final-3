@@ -4,10 +4,25 @@ import compression from "compression";
 import pinoHttp from "pino-http";
 import fs from "fs";
 import path from "path";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+
+// Security: basic hardening
+app.use(helmet());
+
+// Basic rate limiting to protect public endpoints from abuse (adjust window/max as needed)
+app.use(
+  rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 100, // limit each IP to 100 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
 
 app.use(compression());
 
@@ -56,6 +71,11 @@ app.use(
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Health endpoint for smoke checks and platform load balancers
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", ts: new Date().toISOString() });
+});
 
 // Determine where the ZIP file lives. Prefer an explicit env var, then common filenames in the repo,
 // then the legacy absolute path used in some Replit environments. This makes the handler resilient
